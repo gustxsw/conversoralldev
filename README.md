@@ -1,174 +1,264 @@
-# Excel DB Updater
+# Excel DB Updater Pro
 
-Sistema profissional para atualização de banco de dados através de planilhas Excel.
+**Controle total para profissionais de banco de dados**
 
-## Funcionalidades
+Sistema prático para gerar SQL a partir de planilhas Excel. Mantém o controle manual que você precisa, mas elimina o trabalho repetitivo.
 
-✅ **Upload Direto de Excel**
-- Suporte para arquivos .xlsx e .xls
-- Drag & drop ou seleção de arquivo
-- Leitura automática de abas múltiplas
+---
 
-✅ **Preview dos Dados**
-- Visualização prévia dos dados antes de processar
-- Seleção de aba do Excel
-- Configuração do nome da tabela
+## Por que essa solução?
 
-✅ **Mapeamento Inteligente**
-- Mapeamento visual de colunas Excel → Banco de Dados
-- Definição de tipos de dados (texto, número, booleano, data)
-- Seleção de coluna chave para updates
-- Interface intuitiva com indicadores visuais
+Para quem trabalha com banco de dados diariamente e precisa de **praticidade COM controle**:
 
-✅ **Validação Automática**
-- Validação de dados antes da execução
-- Detecção de valores duplicados
-- Verificação de tipos de dados
-- Alertas e erros detalhados
+✅ **Upload de Excel** - Chega de copiar/colar dados
+✅ **Gera SQL editável** - Você VÊ e pode MODIFICAR o SQL antes de executar
+✅ **Todas as tratativas** - Colunas fixas, forçar strings, tipos de dados
+✅ **INSERT ou UPDATE** - Controle total do tipo de operação
+✅ **Execução opcional** - Copie o SQL ou execute direto (sua escolha)
+✅ **Histórico** - Auditoria de tudo que foi gerado/executado
 
-✅ **Execução Segura**
-- Confirmação antes de executar
-- Execução em lote com feedback em tempo real
-- Tratamento individual de erros
-- Estatísticas de sucesso/falha
+**Não é automático demais.** Você mantém o controle. É só mais prático.
 
-✅ **Histórico Completo**
-- Registro de todas as operações
-- Detalhes de cada execução
-- Log de erros para auditoria
-- Interface expandível para detalhes
+---
 
-## Como Usar
+## Como Funciona
 
-### 1. Upload do Arquivo
+### Painel Esquerdo: Configuração
+1. **Upload** - Arraste o arquivo Excel
+2. **Config Básica** - Tabela, INSERT/UPDATE, código inicial
+3. **Preview** - Veja os dados antes
+4. **Mapeamento** - Defina colunas e tipos de dados
+5. **Colunas Fixas** - Valores padrão (ex: situacao='Ativo')
+6. **Forçar String** - Marque colunas que devem ser tratadas como texto
+7. **Gerar SQL** - Cria o script completo
 
-1. Clique ou arraste seu arquivo Excel para a área de upload
-2. O sistema irá ler automaticamente os dados
+### Painel Direito: Resultado
+- **Validação** - Erros e avisos automáticos
+- **SQL Gerado** - EDITÁVEL, em fundo escuro tipo terminal
+- **Copiar/Baixar** - Para executar onde quiser
+- **Executar (Opcional)** - Se quiser rodar direto no banco
 
-### 2. Preview e Configuração
-
-1. Digite o nome da tabela no banco de dados
-2. Se houver múltiplas abas, selecione a desejada
-3. Visualize os primeiros 10 registros
-4. Clique em "Continuar"
-
-### 3. Mapeamento de Colunas
-
-1. Para cada coluna do Excel, defina:
-   - Nome da coluna no banco de dados
-   - Tipo de dado (texto, número, booleano, data)
-2. **Importante**: Selecione uma coluna chave (código/ID) - marcada com 🔑
-3. Clique em "Validar Dados"
-
-### 4. Validação
-
-1. Revise erros e avisos (se houver)
-2. **Erros** impedem a execução até serem corrigidos
-3. **Avisos** são informativos, mas permitem continuar
-4. Clique em "Executar Atualização"
-
-### 5. Execução
-
-1. Confirme a operação
-2. Aguarde o processamento
-3. Visualize o resultado com estatísticas:
-   - Total de registros
-   - Sucessos
-   - Falhas (com detalhes)
-4. Clique em "Nova Operação" para recomeçar
-
-### 6. Histórico
-
-1. Clique em "Histórico" no topo
-2. Visualize todas as operações executadas
-3. Expanda para ver detalhes completos
-4. Use para auditoria e troubleshooting
+---
 
 ## Exemplo Prático
 
-Imagine que você tem uma planilha Excel com os seguintes dados:
-
-| codigo | preco_custo | preco_venda | personal1 |
-|--------|-------------|-------------|-----------|
-| 000001 | 12.50       | 28.00       | Novo      |
-| 000002 | 18.90       | 42.00       | Premium   |
-| 000003 | 8.20        | 19.50       | Basic     |
-
-**Passos:**
-
-1. **Upload**: Arraste o arquivo Excel
-2. **Preview**: Digite "produtos" como nome da tabela
-3. **Mapeamento**:
-   - codigo → codigo (Texto) - Marque como chave 🔑
-   - preco_custo → preco_custo (Número)
-   - preco_venda → preco_venda (Número)
-   - personal1 → personal1 (Texto)
-4. **Validação**: Verifique se está tudo OK
-5. **Execução**: Confirme e execute
-
-O sistema irá executar:
-```sql
-UPDATE produtos SET preco_custo = 12.50, preco_venda = 28.00, personal1 = 'Novo' WHERE codigo = '000001';
-UPDATE produtos SET preco_custo = 18.90, preco_venda = 42.00, personal1 = 'Premium' WHERE codigo = '000002';
-UPDATE produtos SET preco_custo = 8.20, preco_venda = 19.50, personal1 = 'Basic' WHERE codigo = '000003';
+Você tem um Excel com:
+```
+codigo  | preco_custo | preco_venda | personal1
+000001  | 15.50       | 35.00       | Premium
+000002  | 22.30       | 49.90       | Standard
 ```
 
-## Tabela de Teste
+**Passos:**
+1. Arraste o arquivo
+2. Tabela: `produtos`, Operação: `UPDATE`
+3. Marque `codigo` como chave (🔑)
+4. Adicione coluna fixa: `ativo = TRUE`
+5. Clique em **Gerar SQL**
 
-O sistema já vem com uma tabela de teste chamada `produtos` com 5 registros de exemplo:
+**SQL gerado:**
+```sql
+UPDATE produtos SET preco_custo = 15.50, preco_venda = 35.00, personal1 = 'Premium', ativo = TRUE WHERE codigo = '000001';
+UPDATE produtos SET preco_custo = 22.30, preco_venda = 49.90, personal1 = 'Standard', ativo = TRUE WHERE codigo = '000002';
+```
 
-- Código: 000001 a 000005
-- Campos: nome, preco_custo, preco_venda, personal1, estoque, ativo
+Você pode:
+- ✏️ Editar o SQL se quiser
+- 📋 Copiar e executar no seu cliente SQL favorito
+- ▶️ Executar direto no Supabase (opcional)
 
-Você pode usar essa tabela para testar a aplicação!
+---
 
-## Vantagens sobre a Solução Anterior
+## Recursos para Profissionais
 
-### Antes (HTML Simples)
-- ❌ Processo manual de copiar/colar
-- ❌ Sem validação prévia
-- ❌ Sem preview dos dados
-- ❌ Precisa executar SQL manualmente
-- ❌ Sem histórico
-- ❌ Configuração complexa
+### 1. Controle de Tipos
+- **Número**: Remove vírgulas, não coloca aspas
+- **String**: Coloca aspas, escapa caracteres especiais
+- **Booleano**: Converte para TRUE/FALSE
+- **Data**: Valida formato
 
-### Agora (Aplicação Profissional)
-- ✅ Upload direto de arquivo
-- ✅ Validação automática
-- ✅ Preview interativo
-- ✅ Execução direta no banco
-- ✅ Histórico completo
-- ✅ Interface intuitiva e moderna
+### 2. Forçar como String
+Checkboxes para forçar qualquer coluna como string, mesmo que pareça número.
+Útil para: códigos, CEPs, telefones, etc.
 
-## Tecnologias
+### 3. Colunas Fixas
+Adicione quantas quiser. Exemplos:
+```
+situacao = Ativo
+cod_ncm = 21069090
+cst_rev = 0
+ativo = TRUE
+```
 
-- React 18 + TypeScript
-- Vite (build rápido)
-- Supabase (banco de dados)
-- SheetJS (leitura de Excel)
-- CSS moderno com variáveis
+### 4. INSERT com Código Sequencial
+- Define código inicial (ex: 000001)
+- Gera 6 dígitos automaticamente
+- Incrementa para cada linha
+
+### 5. SQL Editável
+Fundo escuro estilo terminal, fonte monoespaçada.
+Edite à vontade antes de copiar ou executar.
+
+### 6. Validação Inteligente
+- Coluna chave vazia
+- Valores duplicados
+- Tipos incompatíveis
+- Continua mesmo com avisos (você decide)
+
+### 7. Histórico Completo
+- Todas operações registradas
+- Nome da tabela e arquivo
+- Sucesso/falhas por registro
+- Expandível para ver detalhes
+
+---
+
+## Vantagens sobre Sua Solução Anterior
+
+| Antes (HTML) | Agora (React) |
+|-------------|---------------|
+| ❌ Copiar/colar dados manualmente | ✅ Upload direto de arquivo |
+| ❌ Configuração em campos separados | ✅ Interface visual intuitiva |
+| ❌ Sem preview dos dados | ✅ Visualiza tudo antes |
+| ❌ Textarea pequena para SQL | ✅ Editor grande e editável |
+| ❌ Sem validação | ✅ Validação automática |
+| ❌ Sem histórico | ✅ Histórico completo |
+| ✅ Controle total do SQL | ✅ **MANTIDO** - você vê e edita |
+| ✅ Colunas fixas | ✅ **MANTIDO** - ainda mais fácil |
+| ✅ Forçar strings | ✅ **MANTIDO** - com checkboxes |
+
+**Resumo**: Mesma filosofia, **interface 10x melhor**.
+
+---
+
+## Tecnologia
+
+- **Frontend**: React 18 + TypeScript + Vite
+- **Banco**: Supabase (PostgreSQL)
+- **Excel**: SheetJS (leitura de .xlsx/.xls)
+- **Design**: CSS moderno, sem frameworks
+
+---
+
+## Estrutura
+
+```
+src/
+├── components/
+│   ├── FileUpload.tsx       # Drag & drop
+│   ├── DataPreview.tsx      # Preview da planilha
+│   ├── ColumnMapper.tsx     # Mapeamento visual
+│   ├── ValidationPanel.tsx  # Erros/avisos
+│   ├── ExecutionPanel.tsx   # Execução opcional
+│   └── HistoryPanel.tsx     # Histórico
+├── utils/
+│   ├── excelParser.ts       # Leitura de Excel
+│   ├── validator.ts         # Validação de dados
+│   └── dbExecutor.ts        # Execução no banco
+├── types/
+│   └── index.ts             # TypeScript types
+└── App.tsx                  # Componente principal
+```
+
+---
 
 ## Banco de Dados
 
-O sistema usa Supabase (PostgreSQL) com:
-- Tabela `operation_history` para histórico
-- Tabela `produtos` para testes
-- Função `execute_sql` para queries dinâmicas
-- RLS (Row Level Security) configurado
+### Tabelas:
+- `produtos` - Exemplo para testar (5 registros)
+- `operation_history` - Histórico de operações
+
+### Função:
+- `execute_sql(query text)` - Executa SQL dinâmico
+
+Tudo já configurado e pronto para usar!
+
+---
+
+## Como Usar
+
+1. **Prepare seu Excel**
+   - Primeira linha = nomes das colunas
+   - Dados começam na linha 2
+
+2. **Configure tudo no painel esquerdo**
+   - Não pule etapas, cada uma tem sua função
+
+3. **Clique em "Gerar SQL"**
+   - Aparece no painel direito
+
+4. **Revise o SQL gerado**
+   - Edite se necessário
+   - É um textarea normal, pode modificar à vontade
+
+5. **Copie OU Execute**
+   - Copie para executar no seu cliente SQL favorito
+   - OU execute direto ali mesmo
+
+---
+
+## Para Quem É
+
+✅ DBAs que atualizam bases diariamente
+✅ Desenvolvedores que migram dados
+✅ Analistas que importam planilhas
+✅ Quem sabe SQL e quer economizar tempo
+✅ Quem precisa de controle, não automação cega
+
+---
+
+## Para Quem NÃO É
+
+❌ Quem quer algo completamente automático
+❌ Quem não sabe SQL
+❌ Quem não vai revisar o SQL antes de executar
+
+---
 
 ## Segurança
 
-- Validação de tipos de dados
-- Escape automático de aspas simples
-- Confirmação antes de executar
-- Log de todas as operações
-- Tratamento de erros individualizado
+- Escapa aspas simples automaticamente
+- Valida tipos de dados
+- Mostra preview antes de executar
+- Log de todas operações
+- **Você VÊ o SQL** antes de rodar
 
-## Suporte
+---
 
-Para quem trabalha com banco de dados diariamente, essa ferramenta:
-- Economiza tempo
-- Reduz erros
-- Mantém histórico
-- Facilita auditoria
-- Profissionaliza o processo
+## Dica de Uso
+
+**Fluxo recomendado:**
+1. Gere o SQL
+2. Copie para seu cliente SQL
+3. Rode primeiro em ambiente de teste
+4. Depois use a execução direta para agilizar
+
+Assim você tem segurança + praticidade.
+
+---
+
+## Exemplo de Colunas Fixas
+
+Casos comuns:
+```
+situacao = Ativo
+tipo = Produto
+origem = Importacao
+ativo = TRUE
+data_cadastro = CURRENT_TIMESTAMP
+usuario = admin
+cod_ncm = 21069090
+```
+
+---
+
+## Arquivo de Exemplo
+
+Incluído: `exemplo.csv`
+
+Converta para Excel se quiser testar com XLSX.
+Ou use CSV mesmo, a ferramenta lê os dois!
+
+---
+
+**Feito para profissionais que sabem o que estão fazendo e querem fazer mais rápido.**

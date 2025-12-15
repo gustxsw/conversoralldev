@@ -10,18 +10,29 @@ import { validateData } from './utils/validator'
 import { executeUpdates } from './utils/dbExecutor'
 import { ExcelRow, ColumnMapping, ValidationResult } from './types'
 
-type Step = 'upload' | 'preview' | 'mapping' | 'validation' | 'execution'
+interface FixedColumn {
+  name: string
+  value: string
+}
 
 function App() {
-  const [currentStep, setCurrentStep] = useState<Step>('upload')
   const [file, setFile] = useState<File | null>(null)
   const [data, setData] = useState<ExcelRow[]>([])
   const [columns, setColumns] = useState<string[]>([])
   const [sheetNames, setSheetNames] = useState<string[]>([])
   const [selectedSheet, setSelectedSheet] = useState<string>('')
-  const [mappings, setMappings] = useState<ColumnMapping[]>([])
-  const [validation, setValidation] = useState<ValidationResult | null>(null)
+
   const [tableName, setTableName] = useState('')
+  const [operationType, setOperationType] = useState<'insert' | 'update'>('update')
+  const [startCode, setStartCode] = useState('000001')
+
+  const [fixedColumns, setFixedColumns] = useState<FixedColumn[]>([{ name: '', value: '' }])
+  const [stringColumns, setStringColumns] = useState<Set<string>>(new Set())
+
+  const [mappings, setMappings] = useState<ColumnMapping[]>([])
+  const [generatedSQL, setGeneratedSQL] = useState('')
+  const [validation, setValidation] = useState<ValidationResult | null>(null)
+
   const [showHistory, setShowHistory] = useState(false)
 
   const handleFileLoaded = async (uploadedFile: File) => {
@@ -32,7 +43,14 @@ function App() {
       setColumns(result.columns)
       setSheetNames(result.sheetNames)
       setSelectedSheet(result.sheetNames[0])
-      setCurrentStep('preview')
+
+      const initialMappings = result.columns.map(col => ({
+        excelColumn: col,
+        dbColumn: col.toLowerCase().replace(/\s+/g, '_'),
+        isKeyColumn: false,
+        dataType: 'string' as const
+      }))
+      setMappings(initialMappings)
     } catch (error) {
       alert('Erro ao ler o arquivo: ' + error)
     }
@@ -40,60 +58,177 @@ function App() {
 
   const handleSheetChange = async (sheetName: string) => {
     if (!file) return
-
     try {
       const result = await changeSheet(file, sheetName)
       setData(result.data)
       setColumns(result.columns)
       setSelectedSheet(sheetName)
+
+      const initialMappings = result.columns.map(col => ({
+        excelColumn: col,
+        dbColumn: col.toLowerCase().replace(/\s+/g, '_'),
+        isKeyColumn: false,
+        dataType: 'string' as const
+      }))
+      setMappings(initialMappings)
     } catch (error) {
       alert('Erro ao trocar de aba: ' + error)
     }
   }
 
-  const handleNextFromPreview = () => {
-    if (!tableName.trim()) {
-      alert('Por favor, digite o nome da tabela')
-      return
-    }
-    setCurrentStep('mapping')
+  const addFixedColumn = () => {
+    setFixedColumns([...fixedColumns, { name: '', value: '' }])
   }
 
-  const handleNextFromMapping = () => {
-    const hasKeyColumn = mappings.some(m => m.isKeyColumn)
-    if (!hasKeyColumn) {
-      alert('Selecione uma coluna chave antes de continuar')
+  const updateFixedColumn = (index: number, field: 'name' | 'value', value: string) => {
+    const newFixed = [...fixedColumns]
+    newFixed[index][field] = value
+    setFixedColumns(newFixed)
+  }
+
+  const removeFixedColumn = (index: number) => {
+    setFixedColumns(fixedColumns.filter((_, i) => i !== index))
+  }
+
+  const toggleStringColumn = (column: string) => {
+    const newSet = new Set(stringColumns)
+    if (newSet.has(column)) {
+      newSet.delete(column)
+    } else {
+      newSet.add(column)
+    }
+    setStringColumns(newSet)
+  }
+
+  const formatValue = (value: any, column: string, dataType: string): string => {
+    if (value === null || value === undefined || value === '') {
+      return 'NULL'
+    }
+
+    if (stringColumns.has(column)) {
+      return `'${String(value).replace(/'/g, "''")}'`
+    }
+
+    if (dataType === 'number') {
+      return String(value).replace(',', '.')
+    }
+
+    if (dataType === 'boolean') {
+      const boolValue = String(value).toLowerCase()
+      if (['true', '1', 'sim'].includes(boolValue)) return 'TRUE'
+      if (['false', '0', 'não'].includes(boolValue)) return 'FALSE'
+      return 'NULL'
+    }
+
+    return `'${String(value).replace(/'/g, "''")}'`
+  }
+
+  const generateSQL = () => {
+    if (!tableName.trim()) {
+      alert('Digite o nome da tabela')
       return
     }
+
+    const keyColumn = mappings.find(m => m.isKeyColumn)
+    if (!keyColumn && operationType === 'update') {
+      alert('Selecione uma coluna chave para UPDATE')
+      return
+    }
+
     const validationResult = validateData(data, mappings)
     setValidation(validationResult)
-    setCurrentStep('validation')
-  }
 
-  const handleNextFromValidation = () => {
-    if (validation && !validation.isValid) {
-      if (!confirm('Existem erros de validação. Deseja continuar mesmo assim?')) {
+    if (!validationResult.isValid) {
+      if (!confirm('Há erros de validação. Deseja gerar o SQL mesmo assim?')) {
         return
       }
     }
-    setCurrentStep('execution')
+
+    let sql = ''
+    let currentCode = parseInt(startCode)
+
+    const activeFixedColumns = fixedColumns.filter(fc => fc.name && fc.value)
+
+    data.forEach((row) => {
+      if (operationType === 'insert') {
+        const allColumns = ['codigo', ...mappings.map(m => m.dbColumn), ...activeFixedColumns.map(fc => fc.name)]
+
+        const values = [
+          `'${currentCode.toString().padStart(6, '0')}'`,
+          ...mappings.map(m => formatValue(row[m.excelColumn], m.dbColumn, m.dataType)),
+          ...activeFixedColumns.map(fc => formatValue(fc.value, fc.name, 'string'))
+        ]
+
+        sql += `INSERT INTO ${tableName} (${allColumns.join(', ')}) VALUES (${values.join(', ')});\n`
+      } else {
+        const setClauses = [
+          ...mappings.filter(m => !m.isKeyColumn).map(m =>
+            `${m.dbColumn} = ${formatValue(row[m.excelColumn], m.dbColumn, m.dataType)}`
+          ),
+          ...activeFixedColumns.map(fc =>
+            `${fc.name} = ${formatValue(fc.value, fc.name, 'string')}`
+          )
+        ]
+
+        const keyValue = formatValue(row[keyColumn!.excelColumn], keyColumn!.dbColumn, keyColumn!.dataType)
+        sql += `UPDATE ${tableName} SET ${setClauses.join(', ')} WHERE ${keyColumn!.dbColumn} = ${keyValue};\n`
+      }
+
+      currentCode++
+    })
+
+    setGeneratedSQL(sql)
+  }
+
+  const copySQL = () => {
+    if (!generatedSQL) {
+      alert('Gere o SQL primeiro')
+      return
+    }
+    navigator.clipboard.writeText(generatedSQL)
+    alert('SQL copiado para a área de transferência!')
+  }
+
+  const downloadSQL = () => {
+    if (!generatedSQL) {
+      alert('Gere o SQL primeiro')
+      return
+    }
+    const blob = new Blob([generatedSQL], { type: 'text/sql' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${tableName || 'script'}.sql`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   }
 
   const handleExecute = async () => {
-    if (!file) throw new Error('Nenhum arquivo selecionado')
+    if (!generatedSQL) {
+      throw new Error('Gere o SQL primeiro')
+    }
+    if (!file) {
+      throw new Error('Nenhum arquivo selecionado')
+    }
     return await executeUpdates(tableName, data, mappings, file.name)
   }
 
   const resetAll = () => {
-    setCurrentStep('upload')
     setFile(null)
     setData([])
     setColumns([])
     setSheetNames([])
     setSelectedSheet('')
-    setMappings([])
-    setValidation(null)
     setTableName('')
+    setOperationType('update')
+    setStartCode('000001')
+    setFixedColumns([{ name: '', value: '' }])
+    setStringColumns(new Set())
+    setMappings([])
+    setGeneratedSQL('')
+    setValidation(null)
   }
 
   return (
@@ -103,8 +238,8 @@ function App() {
           <div className="logo">
             <span className="logo-icon">📊</span>
             <div className="logo-text">
-              <h1>Excel DB Updater</h1>
-              <p>Atualização profissional de banco de dados via Excel</p>
+              <h1>Excel DB Updater Pro</h1>
+              <p>Controle total para profissionais de banco de dados</p>
             </div>
           </div>
           <button className="history-button" onClick={() => setShowHistory(!showHistory)}>
@@ -117,136 +252,197 @@ function App() {
         {showHistory ? (
           <HistoryPanel />
         ) : (
-          <>
-            <div className="progress-bar">
-              <div className={`progress-step ${currentStep === 'upload' ? 'active' : ['preview', 'mapping', 'validation', 'execution'].includes(currentStep) ? 'completed' : ''}`}>
-                <div className="step-number">1</div>
-                <div className="step-label">Upload</div>
-              </div>
-              <div className="progress-line"></div>
-              <div className={`progress-step ${currentStep === 'preview' ? 'active' : ['mapping', 'validation', 'execution'].includes(currentStep) ? 'completed' : ''}`}>
-                <div className="step-number">2</div>
-                <div className="step-label">Preview</div>
-              </div>
-              <div className="progress-line"></div>
-              <div className={`progress-step ${currentStep === 'mapping' ? 'active' : ['validation', 'execution'].includes(currentStep) ? 'completed' : ''}`}>
-                <div className="step-number">3</div>
-                <div className="step-label">Mapeamento</div>
-              </div>
-              <div className="progress-line"></div>
-              <div className={`progress-step ${currentStep === 'validation' ? 'active' : currentStep === 'execution' ? 'completed' : ''}`}>
-                <div className="step-number">4</div>
-                <div className="step-label">Validação</div>
-              </div>
-              <div className="progress-line"></div>
-              <div className={`progress-step ${currentStep === 'execution' ? 'active' : ''}`}>
-                <div className="step-number">5</div>
-                <div className="step-label">Execução</div>
-              </div>
-            </div>
+          <div className="main-content">
+            <div className="left-panel">
+              <section className="config-section">
+                <h2>1. Upload do Arquivo</h2>
+                <FileUpload onFileLoaded={handleFileLoaded} />
 
-            <div className="content">
-              {currentStep === 'upload' && (
-                <div className="step-content">
-                  <FileUpload onFileLoaded={handleFileLoaded} />
-                </div>
-              )}
-
-              {currentStep === 'preview' && (
-                <div className="step-content">
-                  <div className="config-section">
-                    <label>Nome da Tabela no Banco de Dados:</label>
-                    <input
-                      type="text"
-                      value={tableName}
-                      onChange={(e) => setTableName(e.target.value)}
-                      placeholder="Ex: produtos"
-                      className="table-name-input"
-                    />
+                {file && (
+                  <div className="file-info">
+                    ✓ Arquivo carregado: <strong>{file.name}</strong>
+                    <span className="file-stats">({data.length} linhas)</span>
                   </div>
+                )}
+              </section>
 
-                  {sheetNames.length > 1 && (
-                    <div className="config-section">
-                      <label>Selecione a Aba:</label>
-                      <select
-                        value={selectedSheet}
-                        onChange={(e) => handleSheetChange(e.target.value)}
-                        className="sheet-select"
-                      >
-                        {sheetNames.map(name => (
-                          <option key={name} value={name}>{name}</option>
-                        ))}
+              {data.length > 0 && (
+                <>
+                  <section className="config-section">
+                    <h2>2. Configurações Básicas</h2>
+
+                    <div className="form-group">
+                      <label>Nome da Tabela:</label>
+                      <input
+                        type="text"
+                        value={tableName}
+                        onChange={(e) => setTableName(e.target.value)}
+                        placeholder="Ex: produtos"
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Tipo de Operação:</label>
+                      <select value={operationType} onChange={(e) => setOperationType(e.target.value as any)}>
+                        <option value="update">UPDATE</option>
+                        <option value="insert">INSERT</option>
                       </select>
                     </div>
-                  )}
 
-                  <DataPreview data={data} columns={columns} />
+                    {operationType === 'insert' && (
+                      <div className="form-group">
+                        <label>Código Inicial (6 dígitos):</label>
+                        <input
+                          type="text"
+                          value={startCode}
+                          onChange={(e) => setStartCode(e.target.value)}
+                          pattern="[0-9]{6}"
+                          maxLength={6}
+                        />
+                      </div>
+                    )}
 
-                  <div className="action-buttons">
-                    <button onClick={resetAll} className="button-secondary">
-                      ← Voltar
+                    {sheetNames.length > 1 && (
+                      <div className="form-group">
+                        <label>Aba do Excel:</label>
+                        <select value={selectedSheet} onChange={(e) => handleSheetChange(e.target.value)}>
+                          {sheetNames.map(name => (
+                            <option key={name} value={name}>{name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </section>
+
+                  <section className="config-section">
+                    <h2>3. Preview dos Dados</h2>
+                    <DataPreview data={data} columns={columns} maxRows={5} />
+                  </section>
+
+                  <section className="config-section">
+                    <h2>4. Mapeamento de Colunas</h2>
+                    <ColumnMapper
+                      excelColumns={columns}
+                      onMappingChange={setMappings}
+                      initialMappings={mappings}
+                    />
+                  </section>
+
+                  <section className="config-section">
+                    <h2>5. Colunas Fixas (Valores Padrão)</h2>
+                    <div className="fixed-columns">
+                      {fixedColumns.map((fc, index) => (
+                        <div key={index} className="fixed-column-row">
+                          <input
+                            type="text"
+                            placeholder="Nome da coluna"
+                            value={fc.name}
+                            onChange={(e) => updateFixedColumn(index, 'name', e.target.value)}
+                          />
+                          <input
+                            type="text"
+                            placeholder="Valor padrão"
+                            value={fc.value}
+                            onChange={(e) => updateFixedColumn(index, 'value', e.target.value)}
+                          />
+                          <button
+                            className="btn-remove"
+                            onClick={() => removeFixedColumn(index)}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                      <button className="btn-add" onClick={addFixedColumn}>
+                        + Adicionar Coluna Fixa
+                      </button>
+                    </div>
+                  </section>
+
+                  <section className="config-section">
+                    <h2>6. Forçar como String</h2>
+                    <div className="string-columns-grid">
+                      {columns.map(col => (
+                        <label key={col} className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={stringColumns.has(col)}
+                            onChange={() => toggleStringColumn(col)}
+                          />
+                          <span>{col}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="string-actions">
+                      <button onClick={() => setStringColumns(new Set(columns))}>
+                        Marcar Todas
+                      </button>
+                      <button onClick={() => setStringColumns(new Set())}>
+                        Desmarcar Todas
+                      </button>
+                    </div>
+                  </section>
+
+                  <section className="config-section">
+                    <button className="btn-generate" onClick={generateSQL}>
+                      ⚡ Gerar SQL
                     </button>
-                    <button onClick={handleNextFromPreview} className="button-primary">
-                      Continuar →
+                    <button className="btn-reset" onClick={resetAll}>
+                      🔄 Resetar Tudo
                     </button>
-                  </div>
-                </div>
+                  </section>
+                </>
               )}
+            </div>
 
-              {currentStep === 'mapping' && (
-                <div className="step-content">
-                  <ColumnMapper
-                    excelColumns={columns}
-                    onMappingChange={setMappings}
-                  />
-
-                  <div className="action-buttons">
-                    <button onClick={() => setCurrentStep('preview')} className="button-secondary">
-                      ← Voltar
-                    </button>
-                    <button onClick={handleNextFromMapping} className="button-primary">
-                      Validar Dados →
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {currentStep === 'validation' && validation && (
-                <div className="step-content">
+            <div className="right-panel">
+              {validation && (
+                <section className="result-section">
+                  <h2>Validação</h2>
                   <ValidationPanel validation={validation} />
-
-                  <div className="action-buttons">
-                    <button onClick={() => setCurrentStep('mapping')} className="button-secondary">
-                      ← Voltar
-                    </button>
-                    <button onClick={handleNextFromValidation} className="button-primary">
-                      {validation.isValid ? 'Executar Atualização →' : 'Continuar Mesmo Assim →'}
-                    </button>
-                  </div>
-                </div>
+                </section>
               )}
 
-              {currentStep === 'execution' && (
-                <div className="step-content">
+              {generatedSQL && (
+                <section className="result-section">
+                  <h2>SQL Gerado</h2>
+                  <div className="sql-preview">
+                    <div className="sql-header">
+                      <span className="sql-info">
+                        {data.length} comando(s) | {generatedSQL.length} caracteres
+                      </span>
+                      <div className="sql-actions">
+                        <button onClick={copySQL}>📋 Copiar</button>
+                        <button onClick={downloadSQL}>💾 Baixar</button>
+                      </div>
+                    </div>
+                    <textarea
+                      className="sql-editor"
+                      value={generatedSQL}
+                      onChange={(e) => setGeneratedSQL(e.target.value)}
+                      spellCheck={false}
+                    />
+                  </div>
+                </section>
+              )}
+
+              {generatedSQL && (
+                <section className="result-section">
+                  <h2>Executar no Banco (Opcional)</h2>
+                  <div className="execution-warning">
+                    <p>⚠️ <strong>Atenção:</strong> Esta ação executará o SQL acima diretamente no banco de dados.</p>
+                    <p>Revise o SQL antes de executar. Você também pode copiar e executar manualmente.</p>
+                  </div>
                   <ExecutionPanel
                     tableName={tableName}
                     recordCount={data.length}
                     onExecute={handleExecute}
-                    disabled={false}
+                    disabled={!generatedSQL}
                   />
-
-                  <div className="action-buttons">
-                    <button onClick={() => setCurrentStep('validation')} className="button-secondary">
-                      ← Voltar
-                    </button>
-                    <button onClick={resetAll} className="button-success">
-                      ✓ Nova Operação
-                    </button>
-                  </div>
-                </div>
+                </section>
               )}
             </div>
-          </>
+          </div>
         )}
       </div>
     </div>
