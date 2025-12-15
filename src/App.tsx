@@ -1,14 +1,8 @@
 import { useState } from 'react'
 import { FileUpload } from './components/FileUpload'
-import { DataPreview } from './components/DataPreview'
-import { ColumnMapper } from './components/ColumnMapper'
-import { ValidationPanel } from './components/ValidationPanel'
-import { ExecutionPanel } from './components/ExecutionPanel'
+import { parseExcelFile } from './utils/excelParser'
+import { ExcelRow } from './types'
 import { HistoryPanel } from './components/HistoryPanel'
-import { parseExcelFile, changeSheet } from './utils/excelParser'
-import { validateData } from './utils/validator'
-import { executeUpdates } from './utils/dbExecutor'
-import { ExcelRow, ColumnMapping, ValidationResult } from './types'
 
 interface FixedColumn {
   name: string
@@ -16,24 +10,24 @@ interface FixedColumn {
 }
 
 function App() {
+  const [showHistory, setShowHistory] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [data, setData] = useState<ExcelRow[]>([])
   const [columns, setColumns] = useState<string[]>([])
-  const [sheetNames, setSheetNames] = useState<string[]>([])
-  const [selectedSheet, setSelectedSheet] = useState<string>('')
 
   const [tableName, setTableName] = useState('')
   const [operationType, setOperationType] = useState<'insert' | 'update'>('update')
   const [startCode, setStartCode] = useState('000001')
+  const [separator, setSeparator] = useState('tab')
+  const [customSeparator, setCustomSeparator] = useState('')
+  const [dbType, setDbType] = useState('firebird')
 
   const [fixedColumns, setFixedColumns] = useState<FixedColumn[]>([{ name: '', value: '' }])
+  const [importFixedText, setImportFixedText] = useState('')
+
   const [stringColumns, setStringColumns] = useState<Set<string>>(new Set())
 
-  const [mappings, setMappings] = useState<ColumnMapping[]>([])
   const [generatedSQL, setGeneratedSQL] = useState('')
-  const [validation, setValidation] = useState<ValidationResult | null>(null)
-
-  const [showHistory, setShowHistory] = useState(false)
 
   const handleFileLoaded = async (uploadedFile: File) => {
     try {
@@ -41,42 +35,12 @@ function App() {
       setFile(uploadedFile)
       setData(result.data)
       setColumns(result.columns)
-      setSheetNames(result.sheetNames)
-      setSelectedSheet(result.sheetNames[0])
-
-      const initialMappings = result.columns.map(col => ({
-        excelColumn: col,
-        dbColumn: col.toLowerCase().replace(/\s+/g, '_'),
-        isKeyColumn: false,
-        dataType: 'string' as const
-      }))
-      setMappings(initialMappings)
     } catch (error) {
       alert('Erro ao ler o arquivo: ' + error)
     }
   }
 
-  const handleSheetChange = async (sheetName: string) => {
-    if (!file) return
-    try {
-      const result = await changeSheet(file, sheetName)
-      setData(result.data)
-      setColumns(result.columns)
-      setSelectedSheet(sheetName)
-
-      const initialMappings = result.columns.map(col => ({
-        excelColumn: col,
-        dbColumn: col.toLowerCase().replace(/\s+/g, '_'),
-        isKeyColumn: false,
-        dataType: 'string' as const
-      }))
-      setMappings(initialMappings)
-    } catch (error) {
-      alert('Erro ao trocar de aba: ' + error)
-    }
-  }
-
-  const addFixedColumn = () => {
+  const addColumnRow = () => {
     setFixedColumns([...fixedColumns, { name: '', value: '' }])
   }
 
@@ -90,6 +54,29 @@ function App() {
     setFixedColumns(fixedColumns.filter((_, i) => i !== index))
   }
 
+  const importFixedColumns = () => {
+    if (!importFixedText.trim()) {
+      alert('Por favor, cole as colunas fixas no formato correto.')
+      return
+    }
+
+    setFixedColumns([])
+    const lines = importFixedText.split('\n')
+    const imported: FixedColumn[] = []
+
+    lines.forEach((line) => {
+      if (line.trim()) {
+        const parts = line.split('=').map((part) => part.trim())
+        if (parts.length === 2) {
+          imported.push({ name: parts[0], value: parts[1] })
+        }
+      }
+    })
+
+    setFixedColumns(imported)
+    alert(`${imported.length} colunas fixas importadas com sucesso!`)
+  }
+
   const toggleStringColumn = (column: string) => {
     const newSet = new Set(stringColumns)
     if (newSet.has(column)) {
@@ -100,98 +87,132 @@ function App() {
     setStringColumns(newSet)
   }
 
-  const formatValue = (value: any, column: string, dataType: string): string => {
-    if (value === null || value === undefined || value === '') {
+  const formatValue = (value: any, columnName: string): string => {
+    if (value === '' || value === null || value === undefined) {
       return 'NULL'
     }
 
-    if (stringColumns.has(column)) {
+    const valueStr = String(value).toLowerCase()
+
+    if (valueStr === 'null') {
+      return 'NULL'
+    }
+
+    if (stringColumns.has(columnName)) {
       return `'${String(value).replace(/'/g, "''")}'`
     }
 
-    if (dataType === 'number') {
-      return String(value).replace(',', '.')
+    const numValue = String(value).replace(',', '.')
+    if (!isNaN(Number(numValue)) && value !== '') {
+      return numValue
+    } else if (valueStr === 'true' || valueStr === 'false') {
+      return valueStr.toUpperCase()
+    } else {
+      return `'${String(value).replace(/'/g, "''")}'`
     }
+  }
 
-    if (dataType === 'boolean') {
-      const boolValue = String(value).toLowerCase()
-      if (['true', '1', 'sim'].includes(boolValue)) return 'TRUE'
-      if (['false', '0', 'não'].includes(boolValue)) return 'FALSE'
-      return 'NULL'
-    }
-
-    return `'${String(value).replace(/'/g, "''")}'`
+  const formatCode = (code: number) => {
+    return code.toString().padStart(6, '0')
   }
 
   const generateSQL = () => {
     if (!tableName.trim()) {
-      alert('Digite o nome da tabela')
+      alert('Preencha o nome da tabela!')
       return
     }
 
-    const keyColumn = mappings.find(m => m.isKeyColumn)
-    if (!keyColumn && operationType === 'update') {
-      alert('Selecione uma coluna chave para UPDATE')
+    if (!columns.length) {
+      alert('Preencha as colunas!')
       return
     }
 
-    const validationResult = validateData(data, mappings)
-    setValidation(validationResult)
+    if (!data.length) {
+      alert('Nenhum dado para processar!')
+      return
+    }
 
-    if (!validationResult.isValid) {
-      if (!confirm('Há erros de validação. Deseja gerar o SQL mesmo assim?')) {
-        return
+    const defaultColumns: Record<string, string> = {}
+    fixedColumns.forEach((fc) => {
+      if (fc.name && fc.value) {
+        defaultColumns[fc.name] = fc.value
       }
-    }
+    })
 
-    let sql = ''
+    let sqlScript = ''
     let currentCode = parseInt(startCode)
-
-    const activeFixedColumns = fixedColumns.filter(fc => fc.name && fc.value)
 
     data.forEach((row) => {
       if (operationType === 'insert') {
-        const allColumns = ['codigo', ...mappings.map(m => m.dbColumn), ...activeFixedColumns.map(fc => fc.name)]
+        const allColumns = ['codigo', ...columns, ...Object.keys(defaultColumns)]
 
         const values = [
-          `'${currentCode.toString().padStart(6, '0')}'`,
-          ...mappings.map(m => formatValue(row[m.excelColumn], m.dbColumn, m.dataType)),
-          ...activeFixedColumns.map(fc => formatValue(fc.value, fc.name, 'string'))
+          `'${formatCode(currentCode)}'`,
+          ...columns.map((col) => formatValue(row[col], col)),
+          ...Object.entries(defaultColumns).map(([col, val]) => {
+            if (stringColumns.has(col)) {
+              return `'${val.replace(/'/g, "''")}'`
+            }
+            const numVal = val.replace(',', '.')
+            if (!isNaN(Number(numVal)) && val !== '') {
+              return numVal
+            } else if (val.toLowerCase() === 'null') {
+              return 'NULL'
+            } else if (val.toLowerCase() === 'true' || val.toLowerCase() === 'false') {
+              return val.toUpperCase()
+            } else {
+              return `'${val.replace(/'/g, "''")}'`
+            }
+          })
         ]
 
-        sql += `INSERT INTO ${tableName} (${allColumns.join(', ')}) VALUES (${values.join(', ')});\n`
+        sqlScript += `INSERT INTO ${tableName} (${allColumns.join(', ')}) VALUES (${values.join(', ')});\n`
       } else {
-        const setClauses = [
-          ...mappings.filter(m => !m.isKeyColumn).map(m =>
-            `${m.dbColumn} = ${formatValue(row[m.excelColumn], m.dbColumn, m.dataType)}`
-          ),
-          ...activeFixedColumns.map(fc =>
-            `${fc.name} = ${formatValue(fc.value, fc.name, 'string')}`
-          )
-        ]
+        const setClauses: string[] = []
+        columns.forEach((col) => {
+          setClauses.push(`${col} = ${formatValue(row[col], col)}`)
+        })
 
-        const keyValue = formatValue(row[keyColumn!.excelColumn], keyColumn!.dbColumn, keyColumn!.dataType)
-        sql += `UPDATE ${tableName} SET ${setClauses.join(', ')} WHERE ${keyColumn!.dbColumn} = ${keyValue};\n`
+        Object.entries(defaultColumns).forEach(([col, val]) => {
+          let formattedVal: string
+          if (stringColumns.has(col)) {
+            formattedVal = `'${val.replace(/'/g, "''")}'`
+          } else {
+            const numVal = val.replace(',', '.')
+            if (!isNaN(Number(numVal)) && val !== '') {
+              formattedVal = numVal
+            } else if (val.toLowerCase() === 'null') {
+              formattedVal = 'NULL'
+            } else if (val.toLowerCase() === 'true' || val.toLowerCase() === 'false') {
+              formattedVal = val.toUpperCase()
+            } else {
+              formattedVal = `'${val.replace(/'/g, "''")}'`
+            }
+          }
+          setClauses.push(`${col} = ${formattedVal}`)
+        })
+
+        sqlScript += `UPDATE ${tableName} SET ${setClauses.join(', ')} WHERE codigo = '${formatCode(currentCode)}';\n`
       }
 
       currentCode++
     })
 
-    setGeneratedSQL(sql)
+    setGeneratedSQL(sqlScript)
   }
 
   const copySQL = () => {
     if (!generatedSQL) {
-      alert('Gere o SQL primeiro')
+      alert('Gere um script primeiro!')
       return
     }
     navigator.clipboard.writeText(generatedSQL)
-    alert('SQL copiado para a área de transferência!')
+    alert('Script copiado!')
   }
 
   const downloadSQL = () => {
     if (!generatedSQL) {
-      alert('Gere o SQL primeiro')
+      alert('Gere um script primeiro!')
       return
     }
     const blob = new Blob([generatedSQL], { type: 'text/sql' })
@@ -205,247 +226,284 @@ function App() {
     URL.revokeObjectURL(url)
   }
 
-  const handleExecute = async () => {
-    if (!generatedSQL) {
-      throw new Error('Gere o SQL primeiro')
-    }
-    if (!file) {
-      throw new Error('Nenhum arquivo selecionado')
-    }
-    return await executeUpdates(tableName, data, mappings, file.name)
-  }
+  if (showHistory) {
+    return (
+      <>
+        <header>
+          <div className="logo-container">
+            <div className="logo">&lt;/alldev&gt;</div>
+            <div className="header-text">
+              <h1>Conversor Universal de Dados</h1>
+              <p className="subtitle">Excel → SQL (Insert/Update)</p>
+            </div>
+          </div>
+        </header>
 
-  const resetAll = () => {
-    setFile(null)
-    setData([])
-    setColumns([])
-    setSheetNames([])
-    setSelectedSheet('')
-    setTableName('')
-    setOperationType('update')
-    setStartCode('000001')
-    setFixedColumns([{ name: '', value: '' }])
-    setStringColumns(new Set())
-    setMappings([])
-    setGeneratedSQL('')
-    setValidation(null)
+        <div className="container">
+          <button className="history-button" onClick={() => setShowHistory(false)}>
+            ← Voltar
+          </button>
+          <HistoryPanel />
+        </div>
+
+        <footer>
+          <p>
+            © <span>&lt;/alldev&gt;</span> - Todos os direitos reservados -{' '}
+            {new Date().getFullYear()}
+          </p>
+        </footer>
+      </>
+    )
   }
 
   return (
-    <div className="app">
-      <header className="app-header">
-        <div className="header-content">
-          <div className="logo">
-            <span className="logo-icon">📊</span>
-            <div className="logo-text">
-              <h1>Excel DB Updater Pro</h1>
-              <p>Controle total para profissionais de banco de dados</p>
-            </div>
+    <>
+      <header>
+        <div className="logo-container">
+          <div className="logo">&lt;/alldev&gt;</div>
+          <div className="header-text">
+            <h1>Conversor Universal de Dados</h1>
+            <p className="subtitle">Excel → SQL (Insert/Update)</p>
           </div>
-          <button className="history-button" onClick={() => setShowHistory(!showHistory)}>
-            {showHistory ? '← Voltar' : '📋 Histórico'}
-          </button>
         </div>
       </header>
 
-      <div className="app-container">
-        {showHistory ? (
-          <HistoryPanel />
-        ) : (
-          <div className="main-content">
-            <div className="left-panel">
-              <section className="config-section">
-                <h2>1. Upload do Arquivo</h2>
-                <FileUpload onFileLoaded={handleFileLoaded} />
+      <div className="container">
+        <button className="history-button" onClick={() => setShowHistory(true)}>
+          📋 Histórico
+        </button>
 
-                {file && (
-                  <div className="file-info">
-                    ✓ Arquivo carregado: <strong>{file.name}</strong>
-                    <span className="file-stats">({data.length} linhas)</span>
-                  </div>
-                )}
-              </section>
+        <div className="instructions">
+          <h2>📌 Como usar</h2>
+          <p>
+            1. Faça upload do arquivo Excel ou cole os dados no <b>Passo 1</b>.<br />
+            2. Preencha o nome da tabela e as colunas no <b>Passo 2</b>.<br />
+            3. Se desejar, adicione colunas fixas com valores padrão no <b>Passo 3</b>.<br />
+            4. Especifique quais colunas devem ser tratadas como strings no <b>Passo 4</b>.<br />
+            5. Clique em <b>Gerar Script SQL</b> e copie ou baixe o resultado no <b>Passo 5</b>.
+          </p>
+        </div>
 
-              {data.length > 0 && (
-                <>
-                  <section className="config-section">
-                    <h2>2. Configurações Básicas</h2>
+        <div className="step">
+          <h2>1. Upload do Excel ou Cole os Dados</h2>
+          <FileUpload onFileLoaded={handleFileLoaded} />
 
-                    <div className="form-group">
-                      <label>Nome da Tabela:</label>
-                      <input
-                        type="text"
-                        value={tableName}
-                        onChange={(e) => setTableName(e.target.value)}
-                        placeholder="Ex: produtos"
-                      />
-                    </div>
-
-                    <div className="form-group">
-                      <label>Tipo de Operação:</label>
-                      <select value={operationType} onChange={(e) => setOperationType(e.target.value as any)}>
-                        <option value="update">UPDATE</option>
-                        <option value="insert">INSERT</option>
-                      </select>
-                    </div>
-
-                    {operationType === 'insert' && (
-                      <div className="form-group">
-                        <label>Código Inicial (6 dígitos):</label>
-                        <input
-                          type="text"
-                          value={startCode}
-                          onChange={(e) => setStartCode(e.target.value)}
-                          pattern="[0-9]{6}"
-                          maxLength={6}
-                        />
-                      </div>
-                    )}
-
-                    {sheetNames.length > 1 && (
-                      <div className="form-group">
-                        <label>Aba do Excel:</label>
-                        <select value={selectedSheet} onChange={(e) => handleSheetChange(e.target.value)}>
-                          {sheetNames.map(name => (
-                            <option key={name} value={name}>{name}</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                  </section>
-
-                  <section className="config-section">
-                    <h2>3. Preview dos Dados</h2>
-                    <DataPreview data={data} columns={columns} maxRows={5} />
-                  </section>
-
-                  <section className="config-section">
-                    <h2>4. Mapeamento de Colunas</h2>
-                    <ColumnMapper
-                      excelColumns={columns}
-                      onMappingChange={setMappings}
-                      initialMappings={mappings}
-                    />
-                  </section>
-
-                  <section className="config-section">
-                    <h2>5. Colunas Fixas (Valores Padrão)</h2>
-                    <div className="fixed-columns">
-                      {fixedColumns.map((fc, index) => (
-                        <div key={index} className="fixed-column-row">
-                          <input
-                            type="text"
-                            placeholder="Nome da coluna"
-                            value={fc.name}
-                            onChange={(e) => updateFixedColumn(index, 'name', e.target.value)}
-                          />
-                          <input
-                            type="text"
-                            placeholder="Valor padrão"
-                            value={fc.value}
-                            onChange={(e) => updateFixedColumn(index, 'value', e.target.value)}
-                          />
-                          <button
-                            className="btn-remove"
-                            onClick={() => removeFixedColumn(index)}
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
-                      <button className="btn-add" onClick={addFixedColumn}>
-                        + Adicionar Coluna Fixa
-                      </button>
-                    </div>
-                  </section>
-
-                  <section className="config-section">
-                    <h2>6. Forçar como String</h2>
-                    <div className="string-columns-grid">
-                      {columns.map(col => (
-                        <label key={col} className="checkbox-label">
-                          <input
-                            type="checkbox"
-                            checked={stringColumns.has(col)}
-                            onChange={() => toggleStringColumn(col)}
-                          />
-                          <span>{col}</span>
-                        </label>
-                      ))}
-                    </div>
-                    <div className="string-actions">
-                      <button onClick={() => setStringColumns(new Set(columns))}>
-                        Marcar Todas
-                      </button>
-                      <button onClick={() => setStringColumns(new Set())}>
-                        Desmarcar Todas
-                      </button>
-                    </div>
-                  </section>
-
-                  <section className="config-section">
-                    <button className="btn-generate" onClick={generateSQL}>
-                      ⚡ Gerar SQL
-                    </button>
-                    <button className="btn-reset" onClick={resetAll}>
-                      🔄 Resetar Tudo
-                    </button>
-                  </section>
-                </>
-              )}
+          {file && (
+            <div className="file-info">
+              ✓ Arquivo carregado: <strong>{file.name}</strong> ({data.length} linhas, {columns.length} colunas)
             </div>
+          )}
 
-            <div className="right-panel">
-              {validation && (
-                <section className="result-section">
-                  <h2>Validação</h2>
-                  <ValidationPanel validation={validation} />
-                </section>
-              )}
+          {data.length > 0 && (
+            <div className="preview-container">
+              <div className="preview-header">
+                Preview dos Dados (primeiras 5 linhas)
+              </div>
+              <div className="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      {columns.map((col) => (
+                        <th key={col}>{col}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.slice(0, 5).map((row, index) => (
+                      <tr key={index}>
+                        <td>{index + 1}</td>
+                        {columns.map((col) => (
+                          <td key={col}>{String(row[col] ?? '')}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
 
-              {generatedSQL && (
-                <section className="result-section">
-                  <h2>SQL Gerado</h2>
-                  <div className="sql-preview">
-                    <div className="sql-header">
-                      <span className="sql-info">
-                        {data.length} comando(s) | {generatedSQL.length} caracteres
-                      </span>
-                      <div className="sql-actions">
-                        <button onClick={copySQL}>📋 Copiar</button>
-                        <button onClick={downloadSQL}>💾 Baixar</button>
-                      </div>
-                    </div>
-                    <textarea
-                      className="sql-editor"
-                      value={generatedSQL}
-                      onChange={(e) => setGeneratedSQL(e.target.value)}
-                      spellCheck={false}
-                    />
-                  </div>
-                </section>
-              )}
+        <div className="step">
+          <h2>2. Configurações Iniciais</h2>
 
-              {generatedSQL && (
-                <section className="result-section">
-                  <h2>Executar no Banco (Opcional)</h2>
-                  <div className="execution-warning">
-                    <p>⚠️ <strong>Atenção:</strong> Esta ação executará o SQL acima diretamente no banco de dados.</p>
-                    <p>Revise o SQL antes de executar. Você também pode copiar e executar manualmente.</p>
-                  </div>
-                  <ExecutionPanel
-                    tableName={tableName}
-                    recordCount={data.length}
-                    onExecute={handleExecute}
-                    disabled={!generatedSQL}
+          <div className="form-group">
+            <label>Nome da Tabela:</label>
+            <input
+              type="text"
+              value={tableName}
+              onChange={(e) => setTableName(e.target.value)}
+              placeholder="Ex: produtos"
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Colunas (separadas por vírgula):</label>
+            <input
+              type="text"
+              value={columns.join(', ')}
+              onChange={(e) => setColumns(e.target.value.split(',').map(c => c.trim()))}
+              placeholder="Ex: nome, preco, categoria"
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Separador dos Dados:</label>
+            <select value={separator} onChange={(e) => setSeparator(e.target.value)}>
+              <option value="tab">Tabulação</option>
+              <option value="comma">Vírgula</option>
+              <option value="semicolon">Ponto e Vírgula</option>
+              <option value="custom">Personalizado</option>
+            </select>
+            {separator === 'custom' && (
+              <input
+                type="text"
+                value={customSeparator}
+                onChange={(e) => setCustomSeparator(e.target.value)}
+                placeholder="Digite o separador"
+                style={{ marginTop: '10px' }}
+              />
+            )}
+          </div>
+
+          <div className="form-group">
+            <label>Banco de Dados:</label>
+            <select value={dbType} onChange={(e) => setDbType(e.target.value)}>
+              <option value="firebird">Firebird</option>
+              <option value="mysql">MySQL</option>
+              <option value="sqlserver">SQL Server</option>
+              <option value="postgresql">PostgreSQL</option>
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label>Tipo de Operação:</label>
+            <select value={operationType} onChange={(e) => setOperationType(e.target.value as any)}>
+              <option value="insert">INSERT</option>
+              <option value="update">UPDATE</option>
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label>Código Inicial (6 dígitos):</label>
+            <input
+              type="text"
+              value={startCode}
+              onChange={(e) => setStartCode(e.target.value)}
+              pattern="[0-9]{6}"
+              maxLength={6}
+              title="Digite um código de 6 dígitos"
+            />
+          </div>
+        </div>
+
+        <div className="step">
+          <h2>3. Colunas Fixas (opcional)</h2>
+          <div>
+            {fixedColumns.map((fc, index) => (
+              <div key={index} className="column-row">
+                <input
+                  type="text"
+                  placeholder="Nome da Coluna"
+                  value={fc.name}
+                  onChange={(e) => updateFixedColumn(index, 'name', e.target.value)}
+                />
+                <input
+                  type="text"
+                  placeholder="Valor Padrão"
+                  value={fc.value}
+                  onChange={(e) => updateFixedColumn(index, 'value', e.target.value)}
+                />
+                <button onClick={() => removeFixedColumn(index)}>X</button>
+              </div>
+            ))}
+            <button onClick={addColumnRow}>Adicionar Coluna Fixa</button>
+          </div>
+
+          <div className="import-section">
+            <h3>Importar Colunas Fixas</h3>
+            <p>
+              Cole abaixo as colunas fixas no formato <code>coluna = valor</code> (uma por linha):
+            </p>
+            <textarea
+              value={importFixedText}
+              onChange={(e) => setImportFixedText(e.target.value)}
+              placeholder={`Ex:
+situação = Ativo
+cod_ncm = 21069090
+cst_rev = 0
+st_rev = 102
+elo_rev = 102
+unidade = Und
+CSOSN = 102
+ELO = 102`}
+            />
+            <button onClick={importFixedColumns}>Importar Colunas</button>
+          </div>
+        </div>
+
+        <div className="step">
+          <h2>4. Colunas que Esperam String (opcional)</h2>
+          <div className="string-columns-section">
+            <p>
+              Selecione quais colunas devem ser tratadas como strings (ex: preco_custo = '63,90'):
+            </p>
+            <div className="string-columns-grid">
+              {columns.map((col) => (
+                <div key={col} className="checkbox-container">
+                  <input
+                    type="checkbox"
+                    id={`string_${col}`}
+                    checked={stringColumns.has(col)}
+                    onChange={() => toggleStringColumn(col)}
                   />
-                </section>
-              )}
+                  <label htmlFor={`string_${col}`}>{col}</label>
+                </div>
+              ))}
+            </div>
+            <div className="button-group">
+              <button onClick={() => setStringColumns(new Set(columns))}>
+                Selecionar Todas
+              </button>
+              <button onClick={() => setStringColumns(new Set())}>
+                Desselecionar Todas
+              </button>
             </div>
           </div>
-        )}
+        </div>
+
+        <div className="step">
+          <h2>5. Gerar e Visualizar SQL</h2>
+          <button onClick={generateSQL}>Gerar Script SQL</button>
+
+          {generatedSQL && (
+            <>
+              <div className="form-group" style={{ marginTop: '20px' }}>
+                <label>SQL Gerado:</label>
+                <textarea
+                  className="sql-output"
+                  value={generatedSQL}
+                  onChange={(e) => setGeneratedSQL(e.target.value)}
+                  spellCheck={false}
+                />
+              </div>
+              <div className="button-group">
+                <button onClick={copySQL}>Copiar</button>
+                <button onClick={downloadSQL}>Baixar</button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
-    </div>
+
+      <footer>
+        <p>
+          © <span>&lt;/alldev&gt;</span> - Todos os direitos reservados -{' '}
+          {new Date().getFullYear()}
+        </p>
+      </footer>
+    </>
   )
 }
 
