@@ -2,12 +2,742 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>📊</text></svg>" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Conversor Universal - </alldev></title>
+    <style>
+      :root {
+        --primary: #000c5f;
+        --accent: #00bfff;
+        --white: #ffffff;
+        --gray: #555;
+        --light-gray: #f9f9f9;
+      }
+
+      body {
+        font-family: "Segoe UI", Arial, sans-serif;
+        background: var(--white);
+        color: #333;
+        margin: 0;
+        padding: 0;
+        line-height: 1.5;
+      }
+
+      /* HEADER */
+      header {
+        background: var(--primary);
+        color: var(--white);
+        padding: 20px 40px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        box-shadow: 0 3px 6px rgba(0, 0, 0, 0.2);
+      }
+
+      .logo-container {
+        display: flex;
+        align-items: center;
+      }
+
+      .logo {
+        font-size: 26px;
+        font-weight: bold;
+        margin-right: 15px;
+        color: var(--accent);
+      }
+
+      .header-text h1 {
+        margin: 0;
+        font-size: 22px;
+        font-weight: bold;
+      }
+
+      .header-text .subtitle {
+        margin: 2px 0 0;
+        font-size: 14px;
+        color: #ddd;
+      }
+
+      /* CONTAINER */
+      .container {
+        max-width: 1000px;
+        margin: 40px auto;
+        padding: 0 20px;
+      }
+
+      .instructions {
+        margin-bottom: 30px;
+        padding: 20px;
+        background: var(--light-gray);
+        border-left: 5px solid var(--accent);
+        border-radius: 6px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+      }
+
+      .instructions h2 {
+        margin-top: 0;
+        color: var(--primary);
+      }
+
+      /* STEPS */
+      .step {
+        margin-bottom: 25px;
+        padding: 20px;
+        background: var(--white);
+        border-radius: 8px;
+        box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
+        transition: transform 0.2s;
+      }
+
+      .step:hover {
+        transform: translateY(-2px);
+      }
+
+      .step h2 {
+        font-size: 18px;
+        margin-bottom: 15px;
+        color: var(--primary);
+      }
+
+      textarea,
+      input,
+      select {
+        width: 100%;
+        padding: 10px;
+        margin: 8px 0 18px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        font-size: 14px;
+        transition: border-color 0.2s;
+      }
+
+      textarea:focus,
+      input:focus,
+      select:focus {
+        border-color: var(--accent);
+        outline: none;
+      }
+
+      textarea {
+        min-height: 120px;
+        resize: vertical;
+      }
+
+      .column-row {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 12px;
+        align-items: center;
+      }
+
+      .column-row input {
+        flex: 1;
+      }
+
+      .column-row select {
+        width: 120px;
+        margin-bottom: 0;
+      }
+
+      .string-columns-section {
+        margin-top: 15px;
+        padding: 15px;
+        background: #f0f8ff;
+        border-radius: 6px;
+        border: 1px dashed var(--accent);
+      }
+
+      .string-columns-section h3 {
+        margin-top: 0;
+        color: var(--primary);
+      }
+
+      .string-columns-list {
+        margin: 10px 0;
+      }
+
+      .string-column-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 8px;
+        padding: 8px;
+        background: white;
+        border-radius: 4px;
+        border: 1px solid #ddd;
+      }
+
+      button {
+        padding: 10px 20px;
+        background: var(--primary);
+        color: var(--white);
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+      }
+
+      button:hover {
+        background: var(--accent);
+        transform: translateY(-2px);
+      }
+
+      .small-button {
+        padding: 5px 10px;
+        font-size: 12px;
+      }
+
+      pre {
+        background: #f4f4f4;
+        border: 1px solid #ddd;
+        padding: 12px;
+        border-radius: 6px;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+
+      /* FOOTER */
+      footer {
+        background: var(--primary);
+        color: var(--white);
+        text-align: center;
+        padding: 15px;
+        margin-top: 40px;
+        font-size: 14px;
+      }
+
+      footer span {
+        color: var(--accent);
+        font-weight: bold;
+      }
+
+      .import-section {
+        margin-top: 20px;
+        padding: 15px;
+        background: #f0f8ff;
+        border-radius: 6px;
+        border: 1px dashed var(--accent);
+      }
+
+      .import-section h3 {
+        margin-top: 0;
+        color: var(--primary);
+      }
+
+      .code-example {
+        font-family: monospace;
+        background: #eee;
+        padding: 10px;
+        border-radius: 4px;
+        margin: 10px 0;
+      }
+
+      .sequential-button {
+        background: #28a745;
+        margin-left: 10px;
+      }
+      .sequential-button:hover {
+        background: #218838;
+      }
+
+      .checkbox-container {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 8px 0;
+      }
+
+      .checkbox-container input[type="checkbox"] {
+        width: auto;
+        margin: 0;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <header>
+      <div class="logo-container">
+        <div class="logo">&lt;/alldev&gt;</div>
+        <div class="header-text">
+          <h1>Conversor Universal de Dados</h1>
+          <p class="subtitle">Excel → SQL (Insert/Update)</p>
+        </div>
+      </div>
+    </header>
+
+    <div class="container">
+      <div class="instructions">
+        <h2>📌 Como usar</h2>
+        <p>
+          1. Preencha o nome da tabela e as colunas no <b>Passo 1</b>.<br />
+          2. Se desejar, adicione colunas fixas com valores padrão no
+          <b>Passo 2</b>.<br />
+          3. Especifique quais colunas devem ser tratadas como strings no
+          <b>Passo 3</b>.<br />
+          4. Cole os dados copiados do Excel no <b>Passo 4</b>.<br />
+          5. Escolha <b>INSERT</b> para inserir ou <b>UPDATE</b> para
+          atualizar.<br />
+          6. Clique em <b>Gerar Script SQL</b> e copie ou baixe o resultado.
+        </p>
+      </div>
+
+      <!-- Passo 1 -->
+      <div class="step">
+        <h2>1. Configurações Iniciais</h2>
+        <label>Nome da Tabela:</label>
+        <input type="text" id="tableName" placeholder="Ex: produtos" />
+
+        <label>Colunas (separadas por vírgula):</label>
+        <input
+          type="text"
+          id="columns"
+          placeholder="Ex: nome, preco, categoria"
+          onchange="updateStringColumnsList()"
+        />
+
+        <label>Separador dos Dados:</label>
+        <select id="separator">
+          <option value="tab">Tabulação</option>
+          <option value="comma">Vírgula</option>
+          <option value="semicolon">Ponto e Vírgula</option>
+          <option value="custom">Personalizado</option>
+        </select>
+        <input
+          type="text"
+          id="customSeparator"
+          placeholder="Digite o separador"
+          style="display: none"
+        />
+
+        <label>Banco de Dados:</label>
+        <select id="dbType">
+          <option value="firebird">Firebird</option>
+          <option value="mysql">MySQL</option>
+          <option value="sqlserver">SQL Server</option>
+          <option value="postgresql">PostgreSQL</option>
+        </select>
+
+        <label>Tipo de Operação:</label>
+        <select id="operationType">
+          <option value="insert">INSERT</option>
+          <option value="update">UPDATE</option>
+        </select>
+
+        <label>Código Inicial (6 dígitos):</label>
+        <input
+          type="text"
+          id="startCode"
+          value="000001"
+          pattern="[0-9]{6}"
+          title="Digite um código de 6 dígitos"
+        />
+      </div>
+
+      <!-- Passo 2 -->
+      <div class="step">
+        <h2>2. Colunas Fixas (opcional)</h2>
+        <div id="defaultColumnsContainer"></div>
+        <button onclick="addColumnRow()">Adicionar Coluna Fixa</button>
+
+        <div class="import-section">
+          <h3>Importar Colunas Fixas</h3>
+          <p>
+            Cole abaixo as colunas fixas no formato
+            <code>coluna = valor</code> (uma por linha):
+          </p>
+          <textarea
+            id="importFixedColumns"
+            placeholder="Ex:
+situação = Ativo
+cod_ncm = 21069090
+cst_rev = 0
+st_rev = 102
+elo_rev = 102
+unidade = Und
+CSOSN = 102
+ELO = 102"
+          ></textarea>
+          <button onclick="importFixedColumns()">Importar Colunas</button>
+        </div>
+      </div>
+
+      <!-- Passo 3 - Nova seção para colunas string -->
+      <div class="step">
+        <h2>3. Colunas que Esperam String (opcional)</h2>
+        <div class="string-columns-section">
+          <p>
+            Selecione quais colunas devem ser tratadas como strings (ex:
+            preco_custo = '63,90'):
+          </p>
+          <div id="stringColumnsList" class="string-columns-list">
+            <!-- As colunas serão adicionadas dinamicamente aqui -->
+          </div>
+          <button onclick="selectAllStringColumns()">Selecionar Todas</button>
+          <button onclick="deselectAllStringColumns()">
+            Desselecionar Todas
+          </button>
+        </div>
+      </div>
+
+      <!-- Passo 4 (antigo Passo 3) -->
+      <div class="step">
+        <h2>4. Cole os Dados do Excel</h2>
+        <textarea
+          id="excelData"
+          placeholder="Cole aqui os dados copiados do Excel"
+        ></textarea>
+        <button onclick="generateSQL()">Gerar Script SQL</button>
+        <button class="sequential-button" onclick="redirectToSequentialPage()">
+          Já tenho o script, agora quero apenas adicionar código sequencial/id
+        </button>
+      </div>
+
+      <!-- Passo 5 (antigo Passo 4) -->
+      <div class="step">
+        <h2>5. Resultado</h2>
+        <textarea id="sqlOutput" readonly></textarea><br />
+        <button onclick="copySQL()">Copiar</button>
+        <button onclick="downloadSQL()">Baixar</button>
+      </div>
+    </div>
+
+    <footer>
+      <p>
+        © <span>&lt;/alldev&gt;</span> - Todos os direitos reservados -
+        <script>
+          document.write(new Date().getFullYear());
+        </script>
+      </p>
+    </footer>
+
+    <script>
+      const defaultColumnsContainer = document.getElementById(
+        "defaultColumnsContainer"
+      );
+      const sqlOutput = document.getElementById("sqlOutput");
+      const stringColumnsList = document.getElementById("stringColumnsList");
+
+      // Objeto para armazenar quais colunas devem ser tratadas como strings
+      let stringColumns = {};
+
+      // Adicionar uma linha inicial de coluna fixa
+      addColumnRow();
+
+      function addColumnRow() {
+        const div = document.createElement("div");
+        div.className = "column-row";
+        div.innerHTML = `
+          <input type="text" placeholder="Nome da Coluna" />
+          <input type="text" placeholder="Valor Padrão" />
+          <button onclick="this.parentElement.remove()">X</button>
+        `;
+        defaultColumnsContainer.appendChild(div);
+      }
+
+      function importFixedColumns() {
+        const importText = document.getElementById("importFixedColumns").value;
+        if (!importText.trim()) {
+          alert("Por favor, cole as colunas fixas no formato correto.");
+          return;
+        }
+
+        // Limpar colunas existentes
+        defaultColumnsContainer.innerHTML = "";
+
+        const lines = importText.split("\n");
+        lines.forEach((line) => {
+          if (line.trim()) {
+            const parts = line.split("=").map((part) => part.trim());
+            if (parts.length === 2) {
+              const div = document.createElement("div");
+              div.className = "column-row";
+              div.innerHTML = `
+                <input type="text" placeholder="Nome da Coluna" value="${parts[0]}" />
+                <input type="text" placeholder="Valor Padrão" value="${parts[1]}" />
+                <button onclick="this.parentElement.remove()">X</button>
+              `;
+              defaultColumnsContainer.appendChild(div);
+            }
+          }
+        });
+
+        alert(`${lines.length} colunas fixas importadas com sucesso!`);
+      }
+
+      // Função para atualizar a lista de colunas que podem ser tratadas como strings
+      function updateStringColumnsList() {
+        const columnsInput = document.getElementById("columns").value.trim();
+        if (!columnsInput) {
+          stringColumnsList.innerHTML = "<p>Digite as colunas primeiro.</p>";
+          stringColumns = {};
+          return;
+        }
+
+        const columnList = columnsInput.split(",").map((c) => c.trim());
+        stringColumnsList.innerHTML = "";
+
+        columnList.forEach((column) => {
+          if (column) {
+            const div = document.createElement("div");
+            div.className = "checkbox-container";
+            div.innerHTML = `
+              <input type="checkbox" id="string_${column}" onchange="toggleStringColumn('${column}', this.checked)">
+              <label for="string_${column}">${column}</label>
+            `;
+            stringColumnsList.appendChild(div);
+          }
+        });
+      }
+
+      // Função para alternar uma coluna como string
+      function toggleStringColumn(columnName, isString) {
+        stringColumns[columnName] = isString;
+      }
+
+      // Função para selecionar todas as colunas como string
+      function selectAllStringColumns() {
+        const checkboxes = stringColumnsList.querySelectorAll(
+          'input[type="checkbox"]'
+        );
+        checkboxes.forEach((checkbox) => {
+          checkbox.checked = true;
+          const columnName = checkbox.id.replace("string_", "");
+          stringColumns[columnName] = true;
+        });
+      }
+
+      // Função para desselecionar todas as colunas como string
+      function deselectAllStringColumns() {
+        const checkboxes = stringColumnsList.querySelectorAll(
+          'input[type="checkbox"]'
+        );
+        checkboxes.forEach((checkbox) => {
+          checkbox.checked = false;
+          const columnName = checkbox.id.replace("string_", "");
+          stringColumns[columnName] = false;
+        });
+      }
+
+      function getSeparator() {
+        const sep = document.getElementById("separator").value;
+        if (sep === "tab") return "\t";
+        if (sep === "comma") return ",";
+        if (sep === "semicolon") return ";";
+        if (sep === "custom")
+          return document.getElementById("customSeparator").value || ",";
+      }
+
+      document.getElementById("separator").addEventListener("change", (e) => {
+        const customSep = document.getElementById("customSeparator");
+        if (e.target.value === "custom") {
+          customSep.style.display = "block";
+        } else {
+          customSep.style.display = "none";
+        }
+      });
+
+      // Função para formatar código com 6 dígitos
+      function formatCode(code) {
+        return code.toString().padStart(6, "0");
+      }
+
+      // Função para formatar valores baseado no tipo (string ou não) - CORRIGIDA
+      function formatValue(columnName, value) {
+        // Se estiver vazio ou for NULL
+        if (value === "" || value.toLowerCase() === "null") {
+          return "NULL";
+        }
+
+        // Se a coluna está marcada como string, sempre trata como string
+        if (stringColumns[columnName]) {
+          return `'${value.replace(/'/g, "''")}'`;
+        }
+
+        // Caso contrário, usa a lógica original para determinar o tipo
+        if (!isNaN(value.replace(",", ".")) && value !== "") {
+          // É um número - converte ponto por vírgula mas NÃO coloca aspas
+          return value.replace(",", ".");
+        } else if (
+          value.toLowerCase() === "true" ||
+          value.toLowerCase() === "false"
+        ) {
+          // É booleano - converte para maiúsculo sem aspas
+          return value.toUpperCase();
+        } else {
+          // É string - coloca aspas
+          return `'${value.replace(/'/g, "''")}'`;
+        }
+      }
+
+      function generateSQL() {
+        const tableName = document.getElementById("tableName").value.trim();
+        const columns = document.getElementById("columns").value.trim();
+        const excelData = document.getElementById("excelData").value.trim();
+        const operationType = document.getElementById("operationType").value;
+        let startCode = document.getElementById("startCode").value;
+
+        // Garantir que o código inicial tenha 6 dígitos
+        if (!/^\d{6}$/.test(startCode)) {
+          alert("O código inicial deve ter exatamente 6 dígitos!");
+          return;
+        }
+
+        startCode = parseInt(startCode);
+
+        if (!tableName || !columns || !excelData) {
+          alert("Preencha todos os campos obrigatórios!");
+          return;
+        }
+
+        const defaultColumns = {};
+        document.querySelectorAll(".column-row").forEach((row) => {
+          const inputs = row.querySelectorAll("input");
+          if (inputs[0].value && inputs[1].value) {
+            defaultColumns[inputs[0].value.trim()] = inputs[1].value.trim();
+          }
+        });
+
+        const columnList = columns.split(",").map((c) => c.trim());
+        const rows = excelData.split("\n");
+        const separator = getSeparator();
+
+        let sqlScript = "";
+        let currentCode = startCode;
+
+        rows.forEach((row) => {
+          if (!row.trim()) return;
+          const parts = row.split(separator);
+
+          const values = [];
+          for (let i = 0; i < columnList.length; i++) {
+            if (i < parts.length) {
+              let value = parts[i].trim();
+              const columnName = columnList[i];
+              values.push(formatValue(columnName, value));
+            } else {
+              values.push("NULL");
+            }
+          }
+
+          if (operationType === "insert") {
+            const allColumns = [
+              "codigo",
+              ...columnList,
+              ...Object.keys(defaultColumns),
+            ];
+
+            // Formatando os valores das colunas fixas
+            const fixedValues = Object.entries(defaultColumns).map(
+              ([col, val]) => {
+                // Verifica se a coluna fixa está na lista de strings
+                if (stringColumns[col]) {
+                  return `'${val.replace(/'/g, "''")}'`;
+                }
+
+                // Lógica original para colunas fixas
+                if (!isNaN(val.replace(",", ".")) && val !== "") {
+                  return val.replace(",", ".");
+                } else if (val.toLowerCase() === "null") {
+                  return "NULL";
+                } else if (
+                  val.toLowerCase() === "true" ||
+                  val.toLowerCase() === "false"
+                ) {
+                  return val.toUpperCase();
+                } else {
+                  return `'${val.replace(/'/g, "''")}'`;
+                }
+              }
+            );
+
+            const allValues = [
+              `'${formatCode(currentCode)}'`,
+              ...values,
+              ...fixedValues,
+            ];
+
+            sqlScript += `INSERT INTO ${tableName} (${allColumns.join(
+              ", "
+            )}) VALUES (${allValues.join(", ")});\n`;
+          } else {
+            const setClauses = [];
+            columnList.forEach((col, idx) =>
+              setClauses.push(`${col} = ${values[idx]}`)
+            );
+
+            Object.entries(defaultColumns).forEach(([col, val]) => {
+              let formattedVal;
+              if (stringColumns[col]) {
+                formattedVal = `'${val.replace(/'/g, "''")}'`;
+              } else if (!isNaN(val.replace(",", ".")) && val !== "") {
+                formattedVal = val.replace(",", ".");
+              } else if (val.toLowerCase() === "null") {
+                formattedVal = "NULL";
+              } else if (
+                val.toLowerCase() === "true" ||
+                val.toLowerCase() === "false"
+              ) {
+                formattedVal = val.toUpperCase();
+              } else {
+                formattedVal = `'${val.replace(/'/g, "''")}'`;
+              }
+              setClauses.push(`${col} = ${formattedVal}`);
+            });
+
+            sqlScript += `UPDATE ${tableName} SET ${setClauses.join(
+              ", "
+            )} WHERE codigo = '${formatCode(currentCode)}';\n`;
+          }
+
+          currentCode++;
+        });
+
+        sqlOutput.value = sqlScript;
+      }
+
+      function copySQL() {
+        if (!sqlOutput.value) return alert("Gere um script primeiro!");
+        sqlOutput.select();
+        document.execCommand("copy");
+        alert("Script copiado!");
+      }
+
+      function downloadSQL() {
+        if (!sqlOutput.value) return alert("Gere um script primeiro!");
+        const blob = new Blob([sqlOutput.value], { type: "text/sql" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${
+          document.getElementById("tableName").value || "script"
+        }.sql`;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }, 100);
+      }
+
+      function redirectToSequentialPage() {
+        const currentData = {
+          tableName: document.getElementById("tableName").value,
+          columns: document.getElementById("columns").value,
+          separator: document.getElementById("separator").value,
+          customSeparator: document.getElementById("customSeparator").value,
+          dbType: document.getElementById("dbType").value,
+          operationType: document.getElementById("operationType").value,
+          startCode: document.getElementById("startCode").value,
+          excelData: document.getElementById("excelData").value,
+          sqlOutput: document.getElementById("sqlOutput").value,
+          stringColumns: stringColumns,
+        };
+
+        localStorage.setItem("sequentialCodeData", JSON.stringify(currentData));
+        window.location.href = "add_sequential_code.html";
+      }
+    </script>
   </body>
 </html>
