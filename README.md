@@ -6,10 +6,16 @@ Esta versão mantém **100% de compatibilidade** com a versão anterior e adicio
 
 ### ✨ Novo Recurso Principal
 
-**UPDATE por Coluna 'codigo'** - Agora você pode atualizar registros usando o código real da planilha, não um contador sequencial.
+**UPDATE por Coluna da Planilha** - Agora você pode atualizar registros usando qualquer valor da primeira coluna como WHERE condition.
 
-**Exemplo:**
+**Regra simples:**
+- **Primeira coluna** = WHERE condition (ex: codigo, id, email, cpf, etc)
+- **Outras colunas** = SET (atualizadas)
+
+**Exemplo 1 - Produtos:**
 ```
+Colunas: codigo, descricao, preco_venda, preco_custo, personal1
+
 Planilha:
 001234    Mouse Gamer    79.90    65.00    Info
 
@@ -17,12 +23,26 @@ SQL Gerado:
 UPDATE produtos SET descricao = 'Mouse Gamer', preco_venda = 79.90, preco_custo = 65.00, personal1 = 'Info' WHERE codigo = '001234';
 ```
 
+**Exemplo 2 - Clientes:**
+```
+Colunas: email, nome, telefone, cidade
+
+Planilha:
+joao@email.com    João Silva    11999999    São Paulo
+
+SQL Gerado:
+UPDATE clientes SET nome = 'João Silva', telefone = '11999999', cidade = 'São Paulo' WHERE email = 'joao@email.com';
+```
+
+**100% flexível!** Você define as colunas, não há limitação de nomes ou quantidade.
+
 ---
 
 ## 📚 Documentação
 
 ### 🚀 Para Começar Rápido
 - **QUICK_START_UPDATE_BY_CODIGO.md** - Guia passo a passo para usar o novo recurso
+- **FLEXIBILITY_EXAMPLES.md** - 7 exemplos práticos de diferentes casos de uso
 
 ### 📖 Documentação Completa
 - **IMPROVEMENTS.md** - Lista completa de todas as melhorias implementadas
@@ -89,13 +109,16 @@ UPDATE produtos SET descricao = 'Mouse Gamer', preco_venda = 79.90, preco_custo 
 
 ## ⚠️ IMPORTANTE
 
-### No modo "Por Coluna 'codigo'", apenas estas colunas são atualizadas:
-1. `descricao`
-2. `preco_venda`
-3. `preco_custo`
-4. `personal1`
+### No modo "Por Coluna da Planilha":
+- **Primeira coluna** = WHERE condition (NUNCA é atualizada)
+- **Todas as outras colunas** = SET (são atualizadas)
 
-**O `codigo` NUNCA é atualizado** (proteção automática).
+**Você define quais colunas usar!** Não há limitação de nomes ou quantidade.
+
+**Exemplos:**
+- `codigo, descricao, preco` → WHERE codigo, SET descricao e preco
+- `email, nome, telefone` → WHERE email, SET nome e telefone
+- `id, campo1, campo2, campo3` → WHERE id, SET campo1, campo2 e campo3
 
 ---
 

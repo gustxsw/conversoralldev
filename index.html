@@ -283,7 +283,7 @@
           7. Clique em <b>Gerar Script SQL</b> e copie ou baixe o resultado.
         </p>
         <div style="margin-top: 15px; padding: 12px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
-          <b>⚠️ ATENÇÃO - Modo Produção:</b> Ao usar UPDATE com "Por Coluna 'codigo'", apenas as colunas <code>descricao, preco_venda, preco_custo, personal1</code> serão atualizadas. O código nunca é modificado. Use o modo Validação antes de executar em produção.
+          <b>⚠️ ATENÇÃO - Modo Produção:</b> Ao usar UPDATE com "Por Coluna 'codigo'", a PRIMEIRA coluna é usada como WHERE condition (não é atualizada). Todas as OUTRAS colunas que você definir serão atualizadas no SET. Use o modo Validação antes de executar em produção.
         </div>
       </div>
 
@@ -337,7 +337,7 @@
           </select>
           <p style="font-size: 12px; color: #666; margin-top: 10px;">
             <b>Sequencial:</b> Gera WHERE usando contador sequencial (útil para testes).<br>
-            <b>Por Coluna 'codigo':</b> Usa o valor da primeira coluna da planilha como WHERE. Atualiza apenas: descricao, preco_venda, preco_custo, personal1.
+            <b>Por Coluna 'codigo':</b> Primeira coluna da planilha = WHERE condition. Todas as outras colunas = SET (atualizadas).
           </p>
         </div>
 
@@ -449,9 +449,6 @@ ELO = 102"
       // Objeto para armazenar quais colunas devem ser tratadas como strings
       let stringColumns = {};
 
-      // Colunas permitidas para UPDATE no modo "bycodigo" (produção)
-      const ALLOWED_UPDATE_COLUMNS = ['descricao', 'preco_venda', 'preco_custo', 'personal1'];
-
       // Adicionar uma linha inicial de coluna fixa
       addColumnRow();
 
@@ -513,17 +510,17 @@ ELO = 102"
             warnings.push(`Linha ${rowNum}: Menos valores (${parts.length}) do que colunas definidas (${columnList.length}). Valores faltantes serão NULL.`);
           }
 
-          // Validar codigo se for UPDATE by codigo
+          // Validar primeira coluna (WHERE) se for UPDATE by codigo
           if (operationType === 'update' && updateMode === 'bycodigo') {
-            const codigo = parts[0]?.trim();
-            if (!codigo) {
-              errors.push(`Linha ${rowNum}: Coluna 'codigo' está vazia. UPDATE by codigo requer que a primeira coluna seja o código.`);
+            const whereValue = parts[0]?.trim();
+            if (!whereValue) {
+              errors.push(`Linha ${rowNum}: Primeira coluna (WHERE condition) está vazia. Este valor é obrigatório no modo UPDATE por coluna.`);
             } else {
               // Detectar duplicatas
-              if (codigosFound.has(codigo)) {
-                duplicates.push(`Código duplicado encontrado: ${codigo} (linha ${rowNum})`);
+              if (codigosFound.has(whereValue)) {
+                duplicates.push(`Valor duplicado na primeira coluna: ${whereValue} (linha ${rowNum})`);
               }
-              codigosFound.add(codigo);
+              codigosFound.add(whereValue);
             }
           }
 
@@ -763,7 +760,7 @@ ELO = 102"
           validationReport = "⚠️ AVISOS DE VALIDAÇÃO:\n\n";
 
           if (validation.duplicates.length > 0) {
-            validationReport += "🔴 CÓDIGOS DUPLICADOS:\n";
+            validationReport += "🔴 VALORES DUPLICADOS (WHERE):\n";
             validation.duplicates.forEach(dup => validationReport += `• ${dup}\n`);
             validationReport += "\n";
           }
@@ -805,12 +802,13 @@ ELO = 102"
         sqlScript += `-- Tabela: ${tableName}\n`;
         sqlScript += `-- Total de comandos: ${validation.totalRows}\n`;
         if (operationType === 'update' && updateMode === 'bycodigo') {
-          sqlScript += `-- Modo: UPDATE por coluna 'codigo' (produção)\n`;
-          sqlScript += `-- Colunas atualizadas: ${ALLOWED_UPDATE_COLUMNS.join(', ')}\n`;
+          sqlScript += `-- Modo: UPDATE por coluna da planilha (produção)\n`;
+          sqlScript += `-- WHERE: ${columnList[0]} (primeira coluna)\n`;
+          sqlScript += `-- SET: ${columnList.slice(1).join(', ')} (demais colunas)\n`;
         }
         sqlScript += `--\n`;
         if (validation.duplicates.length > 0) {
-          sqlScript += `-- ⚠️ ATENÇÃO: ${validation.duplicates.length} código(s) duplicado(s) encontrado(s)!\n`;
+          sqlScript += `-- ⚠️ ATENÇÃO: ${validation.duplicates.length} valor(es) duplicado(s) na coluna WHERE encontrado(s)!\n`;
           sqlScript += `--\n`;
         }
         sqlScript += "\n";
@@ -885,25 +883,32 @@ ELO = 102"
             // UPDATE logic
             if (updateMode === 'bycodigo') {
               // UPDATE BY CODIGO (PRODUÇÃO)
-              const codigoValue = parts[0]?.trim();
-              if (!codigoValue) return; // Skip empty codigo
+              // Primeira coluna = WHERE condition
+              // Demais colunas = SET
+              const whereValue = parts[0]?.trim();
+              if (!whereValue) return; // Skip empty WHERE value
 
               const setClauses = [];
 
-              // Apenas atualizar colunas permitidas que existem na planilha
-              ALLOWED_UPDATE_COLUMNS.forEach(allowedCol => {
-                const colIndex = columnList.indexOf(allowedCol);
-                if (colIndex !== -1 && colIndex < parts.length) {
-                  const value = parts[colIndex].trim();
-                  const formattedValue = formatValue(allowedCol, value);
-                  const escapedCol = escapeIdentifier(allowedCol, dbType);
+              // Atualizar TODAS as colunas (exceto a primeira que é o WHERE)
+              for (let i = 1; i < columnList.length; i++) {
+                if (i < parts.length) {
+                  const col = columnList[i];
+                  const value = parts[i].trim();
+                  const formattedValue = formatValue(col, value);
+                  const escapedCol = escapeIdentifier(col, dbType);
                   setClauses.push(`${escapedCol} = ${formattedValue}`);
+                } else {
+                  // Se não há valor, usa NULL
+                  const col = columnList[i];
+                  const escapedCol = escapeIdentifier(col, dbType);
+                  setClauses.push(`${escapedCol} = NULL`);
                 }
-              });
+              }
 
-              // Adicionar colunas fixas (se não for 'codigo')
+              // Adicionar colunas fixas (se não for a primeira coluna WHERE)
               Object.entries(defaultColumns).forEach(([col, val]) => {
-                if (col.toLowerCase() !== 'codigo') {
+                if (col.toLowerCase() !== columnList[0].toLowerCase()) {
                   let formattedVal;
                   if (stringColumns[col]) {
                     formattedVal = `'${val.replace(/'/g, "''")}'`;
@@ -926,10 +931,10 @@ ELO = 102"
 
               if (setClauses.length > 0) {
                 const escapedTable = escapeIdentifier(tableName, dbType);
-                const escapedCodigo = escapeIdentifier('codigo', dbType);
+                const escapedWhereCol = escapeIdentifier(columnList[0], dbType);
                 sqlScript += `UPDATE ${escapedTable} SET ${setClauses.join(
                   ", "
-                )} WHERE ${escapedCodigo} = '${codigoValue}';\n`;
+                )} WHERE ${escapedWhereCol} = '${whereValue}';\n`;
               }
 
             } else {
@@ -1002,7 +1007,7 @@ ELO = 102"
 
         // Mostrar confirmação com estatísticas
         if (validation.duplicates.length > 0) {
-          alert(`⚠️ SQL gerado, mas ${validation.duplicates.length} código(s) duplicado(s) encontrado(s)!\n\nRevise o resultado antes de executar.`);
+          alert(`⚠️ SQL gerado, mas ${validation.duplicates.length} valor(es) duplicado(s) na coluna WHERE encontrado(s)!\n\nRevise o resultado antes de executar.`);
         }
       }
 
