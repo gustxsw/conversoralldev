@@ -279,8 +279,12 @@
           4. Cole os dados copiados do Excel no <b>Passo 4</b>.<br />
           5. Escolha <b>INSERT</b> para inserir ou <b>UPDATE</b> para
           atualizar.<br />
-          6. Clique em <b>Gerar Script SQL</b> e copie ou baixe o resultado.
+          6. <b>Para UPDATE por 'codigo':</b> Certifique-se de que a primeira coluna da planilha seja o código e escolha o modo "Por Coluna 'codigo'".<br />
+          7. Clique em <b>Gerar Script SQL</b> e copie ou baixe o resultado.
         </p>
+        <div style="margin-top: 15px; padding: 12px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
+          <b>⚠️ ATENÇÃO - Modo Produção:</b> Ao usar UPDATE com "Por Coluna 'codigo'", apenas as colunas <code>descricao, preco_venda, preco_custo, personal1</code> serão atualizadas. O código nunca é modificado. Use o modo Validação antes de executar em produção.
+        </div>
       </div>
 
       <!-- Passo 1 -->
@@ -320,10 +324,22 @@
         </select>
 
         <label>Tipo de Operação:</label>
-        <select id="operationType">
+        <select id="operationType" onchange="toggleUpdateMode()">
           <option value="insert">INSERT</option>
           <option value="update">UPDATE</option>
         </select>
+
+        <div id="updateModeSection" style="display: none; margin-top: 15px; padding: 15px; background: #fff8dc; border: 2px solid #ffa500; border-radius: 6px;">
+          <label style="font-weight: bold; color: #ff6600;">Modo UPDATE:</label>
+          <select id="updateMode">
+            <option value="sequential">Sequencial (usa código inicial como contador)</option>
+            <option value="bycodigo">Por Coluna 'codigo' (usa codigo da planilha - PRODUÇÃO)</option>
+          </select>
+          <p style="font-size: 12px; color: #666; margin-top: 10px;">
+            <b>Sequencial:</b> Gera WHERE usando contador sequencial (útil para testes).<br>
+            <b>Por Coluna 'codigo':</b> Usa o valor da primeira coluna da planilha como WHERE. Atualiza apenas: descricao, preco_venda, preco_custo, personal1.
+          </p>
+        </div>
 
         <label>Código Inicial (6 dígitos):</label>
         <input
@@ -388,6 +404,17 @@ ELO = 102"
           id="excelData"
           placeholder="Cole aqui os dados copiados do Excel"
         ></textarea>
+
+        <div class="checkbox-container" style="margin: 15px 0; padding: 10px; background: #e8f5e9; border-radius: 6px;">
+          <input type="checkbox" id="wrapTransaction" />
+          <label for="wrapTransaction" style="font-weight: bold;">Encapsular em transação (BEGIN/COMMIT/ROLLBACK)</label>
+        </div>
+
+        <div class="checkbox-container" style="margin: 15px 0; padding: 10px; background: #fff3e0; border-radius: 6px;">
+          <input type="checkbox" id="validateOnly" />
+          <label for="validateOnly" style="font-weight: bold;">Modo Validação (não gera SQL, apenas valida os dados)</label>
+        </div>
+
         <button onclick="generateSQL()">Gerar Script SQL</button>
         <button class="sequential-button" onclick="redirectToSequentialPage()">
           Já tenho o script, agora quero apenas adicionar código sequencial/id
@@ -422,8 +449,94 @@ ELO = 102"
       // Objeto para armazenar quais colunas devem ser tratadas como strings
       let stringColumns = {};
 
+      // Colunas permitidas para UPDATE no modo "bycodigo" (produção)
+      const ALLOWED_UPDATE_COLUMNS = ['descricao', 'preco_venda', 'preco_custo', 'personal1'];
+
       // Adicionar uma linha inicial de coluna fixa
       addColumnRow();
+
+      // Toggle UPDATE mode visibility
+      function toggleUpdateMode() {
+        const operationType = document.getElementById('operationType').value;
+        const updateModeSection = document.getElementById('updateModeSection');
+        if (operationType === 'update') {
+          updateModeSection.style.display = 'block';
+        } else {
+          updateModeSection.style.display = 'none';
+        }
+      }
+
+      // Escapar identificadores SQL (tabelas e colunas) baseado no banco de dados
+      function escapeIdentifier(identifier, dbType) {
+        // Remove caracteres perigosos e valida
+        const sanitized = identifier.trim();
+
+        // Validação básica: apenas letras, números, underscore
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(sanitized)) {
+          throw new Error(`Identificador inválido: "${identifier}". Use apenas letras, números e underscore.`);
+        }
+
+        // Escapar baseado no banco
+        switch(dbType) {
+          case 'mysql':
+            return `\`${sanitized}\``;
+          case 'sqlserver':
+            return `[${sanitized}]`;
+          case 'postgresql':
+            return `"${sanitized}"`;
+          case 'firebird':
+            return sanitized; // Firebird geralmente não usa quotes, mas aceita
+          default:
+            return sanitized;
+        }
+      }
+
+      // Validar dados antes de gerar SQL
+      function validateData(rows, columnList, operationType, updateMode) {
+        const errors = [];
+        const warnings = [];
+        const codigosFound = new Set();
+        const duplicates = [];
+
+        rows.forEach((row, idx) => {
+          if (!row.trim()) return;
+
+          const separator = getSeparator();
+          const parts = row.split(separator);
+          const rowNum = idx + 1;
+
+          // Validar número de colunas
+          if (parts.length > columnList.length) {
+            warnings.push(`Linha ${rowNum}: Mais valores (${parts.length}) do que colunas definidas (${columnList.length}). Valores extras serão ignorados.`);
+          }
+          if (parts.length < columnList.length) {
+            warnings.push(`Linha ${rowNum}: Menos valores (${parts.length}) do que colunas definidas (${columnList.length}). Valores faltantes serão NULL.`);
+          }
+
+          // Validar codigo se for UPDATE by codigo
+          if (operationType === 'update' && updateMode === 'bycodigo') {
+            const codigo = parts[0]?.trim();
+            if (!codigo) {
+              errors.push(`Linha ${rowNum}: Coluna 'codigo' está vazia. UPDATE by codigo requer que a primeira coluna seja o código.`);
+            } else {
+              // Detectar duplicatas
+              if (codigosFound.has(codigo)) {
+                duplicates.push(`Código duplicado encontrado: ${codigo} (linha ${rowNum})`);
+              }
+              codigosFound.add(codigo);
+            }
+          }
+
+          // Validar valores vazios em campos críticos
+          parts.forEach((val, colIdx) => {
+            if (val.trim() === '' && columnList[colIdx]) {
+              warnings.push(`Linha ${rowNum}, Coluna '${columnList[colIdx]}': Valor vazio será convertido para NULL.`);
+            }
+          });
+        });
+
+        return { errors, warnings, duplicates, totalRows: rows.filter(r => r.trim()).length };
+      }
 
       function addColumnRow() {
         const div = document.createElement("div");
@@ -576,6 +689,10 @@ ELO = 102"
         const columns = document.getElementById("columns").value.trim();
         const excelData = document.getElementById("excelData").value.trim();
         const operationType = document.getElementById("operationType").value;
+        const dbType = document.getElementById("dbType").value;
+        const updateMode = document.getElementById("updateMode")?.value || 'sequential';
+        const wrapTransaction = document.getElementById("wrapTransaction").checked;
+        const validateOnly = document.getElementById("validateOnly").checked;
         let startCode = document.getElementById("startCode").value;
 
         // Garantir que o código inicial tenha 6 dígitos
@@ -591,52 +708,149 @@ ELO = 102"
           return;
         }
 
+        // Validar identificadores
+        try {
+          escapeIdentifier(tableName, dbType);
+        } catch (e) {
+          alert(`Erro no nome da tabela: ${e.message}`);
+          return;
+        }
+
+        const columnList = columns.split(",").map((c) => c.trim());
+
+        // Validar todas as colunas
+        try {
+          columnList.forEach(col => escapeIdentifier(col, dbType));
+        } catch (e) {
+          alert(`Erro nos nomes das colunas: ${e.message}`);
+          return;
+        }
+
         const defaultColumns = {};
         document.querySelectorAll(".column-row").forEach((row) => {
           const inputs = row.querySelectorAll("input");
           if (inputs[0].value && inputs[1].value) {
-            defaultColumns[inputs[0].value.trim()] = inputs[1].value.trim();
+            const colName = inputs[0].value.trim();
+            try {
+              escapeIdentifier(colName, dbType);
+              defaultColumns[colName] = inputs[1].value.trim();
+            } catch (e) {
+              alert(`Erro na coluna fixa "${colName}": ${e.message}`);
+              throw e;
+            }
           }
         });
 
-        const columnList = columns.split(",").map((c) => c.trim());
         const rows = excelData.split("\n");
         const separator = getSeparator();
 
+        // Validação
+        const validation = validateData(rows, columnList, operationType, updateMode);
+
+        // Se houver erros críticos, não continuar
+        if (validation.errors.length > 0) {
+          let errorMsg = "❌ ERROS CRÍTICOS ENCONTRADOS:\n\n";
+          validation.errors.forEach(err => errorMsg += `• ${err}\n`);
+          errorMsg += "\n\nCorreja os erros antes de gerar o SQL.";
+          alert(errorMsg);
+          sqlOutput.value = errorMsg;
+          return;
+        }
+
+        // Mostrar warnings e duplicatas
+        let validationReport = "";
+        if (validation.warnings.length > 0 || validation.duplicates.length > 0) {
+          validationReport = "⚠️ AVISOS DE VALIDAÇÃO:\n\n";
+
+          if (validation.duplicates.length > 0) {
+            validationReport += "🔴 CÓDIGOS DUPLICADOS:\n";
+            validation.duplicates.forEach(dup => validationReport += `• ${dup}\n`);
+            validationReport += "\n";
+          }
+
+          if (validation.warnings.length > 0 && validation.warnings.length <= 20) {
+            validationReport += "Avisos:\n";
+            validation.warnings.forEach(warn => validationReport += `• ${warn}\n`);
+          } else if (validation.warnings.length > 20) {
+            validationReport += `${validation.warnings.length} avisos encontrados (muitos para exibir). Revise os dados.\n`;
+          }
+
+          validationReport += `\n📊 Total de linhas: ${validation.totalRows}\n`;
+          validationReport += "═".repeat(80) + "\n\n";
+        }
+
+        // Se for modo validação, apenas mostrar relatório
+        if (validateOnly) {
+          let report = "✅ MODO VALIDAÇÃO\n\n";
+          report += validationReport || "✅ Nenhum erro ou aviso encontrado.\n\n";
+          report += `📊 Estatísticas:\n`;
+          report += `• Total de linhas: ${validation.totalRows}\n`;
+          report += `• Operação: ${operationType.toUpperCase()}\n`;
+          if (operationType === 'update') {
+            report += `• Modo UPDATE: ${updateMode === 'bycodigo' ? 'Por Coluna codigo (PRODUÇÃO)' : 'Sequencial'}\n`;
+          }
+          report += `• Banco de dados: ${dbType.toUpperCase()}\n`;
+          sqlOutput.value = report;
+          return;
+        }
+
+        // Gerar SQL
         let sqlScript = "";
         let currentCode = startCode;
+
+        // Adicionar cabeçalho com informações
+        sqlScript += `-- Gerado por </alldev> Conversor Universal\n`;
+        sqlScript += `-- Data: ${new Date().toLocaleString('pt-BR')}\n`;
+        sqlScript += `-- Operação: ${operationType.toUpperCase()}\n`;
+        sqlScript += `-- Tabela: ${tableName}\n`;
+        sqlScript += `-- Total de comandos: ${validation.totalRows}\n`;
+        if (operationType === 'update' && updateMode === 'bycodigo') {
+          sqlScript += `-- Modo: UPDATE por coluna 'codigo' (produção)\n`;
+          sqlScript += `-- Colunas atualizadas: ${ALLOWED_UPDATE_COLUMNS.join(', ')}\n`;
+        }
+        sqlScript += `--\n`;
+        if (validation.duplicates.length > 0) {
+          sqlScript += `-- ⚠️ ATENÇÃO: ${validation.duplicates.length} código(s) duplicado(s) encontrado(s)!\n`;
+          sqlScript += `--\n`;
+        }
+        sqlScript += "\n";
+
+        // Transaction wrapper
+        if (wrapTransaction) {
+          if (dbType === 'mysql') {
+            sqlScript += "START TRANSACTION;\n\n";
+          } else {
+            sqlScript += "BEGIN TRANSACTION;\n\n";
+          }
+        }
 
         rows.forEach((row) => {
           if (!row.trim()) return;
           const parts = row.split(separator);
 
-          const values = [];
-          for (let i = 0; i < columnList.length; i++) {
-            if (i < parts.length) {
-              let value = parts[i].trim();
-              const columnName = columnList[i];
-              values.push(formatValue(columnName, value));
-            } else {
-              values.push("NULL");
-            }
-          }
-
           if (operationType === "insert") {
+            const values = [];
+            for (let i = 0; i < columnList.length; i++) {
+              if (i < parts.length) {
+                let value = parts[i].trim();
+                const columnName = columnList[i];
+                values.push(formatValue(columnName, value));
+              } else {
+                values.push("NULL");
+              }
+            }
+
             const allColumns = [
               "codigo",
               ...columnList,
               ...Object.keys(defaultColumns),
             ];
 
-            // Formatando os valores das colunas fixas
             const fixedValues = Object.entries(defaultColumns).map(
               ([col, val]) => {
-                // Verifica se a coluna fixa está na lista de strings
                 if (stringColumns[col]) {
                   return `'${val.replace(/'/g, "''")}'`;
                 }
-
-                // Lógica original para colunas fixas
                 if (!isNaN(val.replace(",", ".")) && val !== "") {
                   return val.replace(",", ".");
                 } else if (val.toLowerCase() === "null") {
@@ -658,43 +872,138 @@ ELO = 102"
               ...fixedValues,
             ];
 
-            sqlScript += `INSERT INTO ${tableName} (${allColumns.join(
+            const escapedTable = escapeIdentifier(tableName, dbType);
+            const escapedColumns = allColumns.map(col => escapeIdentifier(col, dbType));
+
+            sqlScript += `INSERT INTO ${escapedTable} (${escapedColumns.join(
               ", "
             )}) VALUES (${allValues.join(", ")});\n`;
+
+            currentCode++;
+
           } else {
-            const setClauses = [];
-            columnList.forEach((col, idx) =>
-              setClauses.push(`${col} = ${values[idx]}`)
-            );
+            // UPDATE logic
+            if (updateMode === 'bycodigo') {
+              // UPDATE BY CODIGO (PRODUÇÃO)
+              const codigoValue = parts[0]?.trim();
+              if (!codigoValue) return; // Skip empty codigo
 
-            Object.entries(defaultColumns).forEach(([col, val]) => {
-              let formattedVal;
-              if (stringColumns[col]) {
-                formattedVal = `'${val.replace(/'/g, "''")}'`;
-              } else if (!isNaN(val.replace(",", ".")) && val !== "") {
-                formattedVal = val.replace(",", ".");
-              } else if (val.toLowerCase() === "null") {
-                formattedVal = "NULL";
-              } else if (
-                val.toLowerCase() === "true" ||
-                val.toLowerCase() === "false"
-              ) {
-                formattedVal = val.toUpperCase();
-              } else {
-                formattedVal = `'${val.replace(/'/g, "''")}'`;
+              const setClauses = [];
+
+              // Apenas atualizar colunas permitidas que existem na planilha
+              ALLOWED_UPDATE_COLUMNS.forEach(allowedCol => {
+                const colIndex = columnList.indexOf(allowedCol);
+                if (colIndex !== -1 && colIndex < parts.length) {
+                  const value = parts[colIndex].trim();
+                  const formattedValue = formatValue(allowedCol, value);
+                  const escapedCol = escapeIdentifier(allowedCol, dbType);
+                  setClauses.push(`${escapedCol} = ${formattedValue}`);
+                }
+              });
+
+              // Adicionar colunas fixas (se não for 'codigo')
+              Object.entries(defaultColumns).forEach(([col, val]) => {
+                if (col.toLowerCase() !== 'codigo') {
+                  let formattedVal;
+                  if (stringColumns[col]) {
+                    formattedVal = `'${val.replace(/'/g, "''")}'`;
+                  } else if (!isNaN(val.replace(",", ".")) && val !== "") {
+                    formattedVal = val.replace(",", ".");
+                  } else if (val.toLowerCase() === "null") {
+                    formattedVal = "NULL";
+                  } else if (
+                    val.toLowerCase() === "true" ||
+                    val.toLowerCase() === "false"
+                  ) {
+                    formattedVal = val.toUpperCase();
+                  } else {
+                    formattedVal = `'${val.replace(/'/g, "''")}'`;
+                  }
+                  const escapedCol = escapeIdentifier(col, dbType);
+                  setClauses.push(`${escapedCol} = ${formattedVal}`);
+                }
+              });
+
+              if (setClauses.length > 0) {
+                const escapedTable = escapeIdentifier(tableName, dbType);
+                const escapedCodigo = escapeIdentifier('codigo', dbType);
+                sqlScript += `UPDATE ${escapedTable} SET ${setClauses.join(
+                  ", "
+                )} WHERE ${escapedCodigo} = '${codigoValue}';\n`;
               }
-              setClauses.push(`${col} = ${formattedVal}`);
-            });
 
-            sqlScript += `UPDATE ${tableName} SET ${setClauses.join(
-              ", "
-            )} WHERE codigo = '${formatCode(currentCode)}';\n`;
+            } else {
+              // UPDATE SEQUENTIAL (modo legado)
+              const values = [];
+              for (let i = 0; i < columnList.length; i++) {
+                if (i < parts.length) {
+                  let value = parts[i].trim();
+                  const columnName = columnList[i];
+                  values.push(formatValue(columnName, value));
+                } else {
+                  values.push("NULL");
+                }
+              }
+
+              const setClauses = [];
+              columnList.forEach((col, idx) => {
+                const escapedCol = escapeIdentifier(col, dbType);
+                setClauses.push(`${escapedCol} = ${values[idx]}`);
+              });
+
+              Object.entries(defaultColumns).forEach(([col, val]) => {
+                let formattedVal;
+                if (stringColumns[col]) {
+                  formattedVal = `'${val.replace(/'/g, "''")}'`;
+                } else if (!isNaN(val.replace(",", ".")) && val !== "") {
+                  formattedVal = val.replace(",", ".");
+                } else if (val.toLowerCase() === "null") {
+                  formattedVal = "NULL";
+                } else if (
+                  val.toLowerCase() === "true" ||
+                  val.toLowerCase() === "false"
+                ) {
+                  formattedVal = val.toUpperCase();
+                } else {
+                  formattedVal = `'${val.replace(/'/g, "''")}'`;
+                }
+                const escapedCol = escapeIdentifier(col, dbType);
+                setClauses.push(`${escapedCol} = ${formattedVal}`);
+              });
+
+              const escapedTable = escapeIdentifier(tableName, dbType);
+              const escapedCodigo = escapeIdentifier('codigo', dbType);
+              sqlScript += `UPDATE ${escapedTable} SET ${setClauses.join(
+                ", "
+              )} WHERE ${escapedCodigo} = '${formatCode(currentCode)}';\n`;
+
+              currentCode++;
+            }
           }
-
-          currentCode++;
         });
 
-        sqlOutput.value = sqlScript;
+        // Transaction end
+        if (wrapTransaction) {
+          sqlScript += "\n";
+          if (dbType === 'mysql') {
+            sqlScript += "-- Se tudo ocorreu bem:\n";
+            sqlScript += "COMMIT;\n\n";
+            sqlScript += "-- Se houver erro, execute:\n";
+            sqlScript += "-- ROLLBACK;\n";
+          } else {
+            sqlScript += "-- Se tudo ocorreu bem:\n";
+            sqlScript += "COMMIT TRANSACTION;\n\n";
+            sqlScript += "-- Se houver erro, execute:\n";
+            sqlScript += "-- ROLLBACK TRANSACTION;\n";
+          }
+        }
+
+        sqlOutput.value = validationReport + sqlScript;
+
+        // Mostrar confirmação com estatísticas
+        if (validation.duplicates.length > 0) {
+          alert(`⚠️ SQL gerado, mas ${validation.duplicates.length} código(s) duplicado(s) encontrado(s)!\n\nRevise o resultado antes de executar.`);
+        }
       }
 
       function copySQL() {
@@ -729,10 +1038,13 @@ ELO = 102"
           customSeparator: document.getElementById("customSeparator").value,
           dbType: document.getElementById("dbType").value,
           operationType: document.getElementById("operationType").value,
+          updateMode: document.getElementById("updateMode")?.value || 'sequential',
           startCode: document.getElementById("startCode").value,
           excelData: document.getElementById("excelData").value,
           sqlOutput: document.getElementById("sqlOutput").value,
           stringColumns: stringColumns,
+          wrapTransaction: document.getElementById("wrapTransaction").checked,
+          validateOnly: document.getElementById("validateOnly").checked,
         };
 
         localStorage.setItem("sequentialCodeData", JSON.stringify(currentData));
